@@ -62,6 +62,10 @@ h1, h3 {
 }
 
 .grid-container {
+	display: block;
+	margin-left: auto;
+	margin-right: auto;
+	max-width: 65%;
 	min-width: 800px;
 	padding-top: 15px;
 	padding-bottom: 70px;
@@ -134,8 +138,13 @@ h1, h3 {
 
 .game-modal {
 	position: absolute;
+	/*top: 40%;*/
+	/*left: 40%;*/
+	margin-left: auto;
+	margin-right: auto;
 	top: 40%;
-	left: 40%;
+	left: 0;
+	right: 0;
 	width: 15%;
 	min-width: 350px;
 	z-index: 10001;
@@ -149,3 +158,14 @@ h1, h3 {
 .game-modal-container {
 	padding: 50px;
 	padding-bottom: 50px;
+}
+
+.image-resize-to-fit {
+	max-width: 100%;
+	max-height: 100%;
+	min-width: 75px;
+}
+
+.cyan-blue {
+	color: #236486;
+}
