@@ -155,6 +155,10 @@ h1, h3 {
 	background: rgba(10, 10, 10, 1.0);
 }
 
+.game-modal-wider {
+	width: 30%;
+}
+
 .game-modal-container {
 	padding: 50px;
 	padding-bottom: 50px;

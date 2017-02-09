@@ -3,13 +3,13 @@
 <head>
 	<meta charset="utf-8">
 	<title>Battleboat Online</title>
-	<!-- jQuery -->
-	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+
+	<!-- Font Awesome -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.6.0/css/font-awesome.min.css">
 
 	<!-- Bootstrap -->
 	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
 	<!--<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">-->
-	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
 
 	<!-- MDBootstrap -->
 	<!--
@@ -17,7 +17,6 @@
 	<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mdbootstrap/4.3.0/js/mdb.min.js"></script>
 -->
 	<link rel="stylesheet" href="assets/css/mdb.min.css" />
-	<script type="text/javascript" src="assets/js/mdb.min.js"></script>
 
 	<!-- Firebase -->
 	<script src="https://www.gstatic.com/firebasejs/3.6.8/firebase.js"></script>
@@ -39,7 +38,6 @@
 
 	<!-- App -->
 	<link rel="stylesheet" href="app.css">
-	<script src="app.js"></script>
 </head>
 <body>
 	<div id="header" class="text-center">
@@ -52,7 +50,69 @@
 	<div id="account_area" style="display: none;">
 		<h3 class="text-center">Profile</h3>
 	</div>
-	<div class="game-modal" id="newGameModal" style="display:none;"></div>
+	<div class="game-modal game-modal-wider" id="newGameModal" style="display:none;"></div>
 	<div class="game-modal" id="signInModal" style="display:none;"></div>
+	<div class="game-modal game-modal-narrower text-center" id="progressModal" style="display: none;">
+		<h3 class="progress-modal-header cyan-blue">Searching for Opponent</h3>
+		<h4 class="progress-modal-subheader">Game ID:</h4><code class="progress-modal-code"></code><br /><br />
+		<div class="preloader-wrapper big active">
+		      <div class="spinner-layer spinner-blue">
+		        <div class="circle-clipper left">
+		          <div class="circle"></div>
+		        </div><div class="gap-patch">
+		          <div class="circle"></div>
+		        </div><div class="circle-clipper right">
+		          <div class="circle"></div>
+		        </div>
+		      </div>
+
+		      <div class="spinner-layer spinner-red">
+		        <div class="circle-clipper left">
+		          <div class="circle"></div>
+		        </div><div class="gap-patch">
+		          <div class="circle"></div>
+		        </div><div class="circle-clipper right">
+		          <div class="circle"></div>
+		        </div>
+		      </div>
+
+		      <div class="spinner-layer spinner-yellow">
+		        <div class="circle-clipper left">
+		          <div class="circle"></div>
+		        </div><div class="gap-patch">
+		          <div class="circle"></div>
+		        </div><div class="circle-clipper right">
+		          <div class="circle"></div>
+		        </div>
+		      </div>
+
+		      <div class="spinner-layer spinner-green">
+		        <div class="circle-clipper left">
+		          <div class="circle"></div>
+		        </div><div class="gap-patch">
+		          <div class="circle"></div>
+		        </div><div class="circle-clipper right">
+		          <div class="circle"></div>
+		        </div>
+		      </div>
+		    </div>
+		</div><br /><br />
+
+	</div>
+
+	<!-- Scripts -->
+	<!-- jQuery -->
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+
+	<!-- Bootstrap + MDB -->
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+	<script type="text/javascript" src="assets/js/tether.min.js"></script>
+	<script type="text/javascript" src="assets/js/mdb.min.js"></script>
+
+	<!-- Redux -->
+	<script type="text/javascript" src="assets/js/redux.min.js"></script>
+
+	<!-- App -->
+	<script src="app.js"></script>
 </body>
 </html>

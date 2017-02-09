@@ -2,6 +2,21 @@
 var setup_complete = false;
 
 $(document).ready(function() {
+	// Create a redux store.
+	var store_handler = function(state = {}, action){
+		var type = action.type;
+		if(type == "STORE_USER_INFO"){
+			var ret = jQuery.extend({}, state);
+			ret["user_info"] = action.data;
+			return ret;
+		} else if(type == "UPDATE_GAME_STATE"){
+			var ret = jQuery.extend({}, state);
+			ret["game_state"] = action.data;
+			return ret;
+		}
+	}
+	var store = Redux.createStore(store_handler);
+
 	// Grab a database reference.
 	var db = firebase.database();
 
@@ -22,9 +37,6 @@ $(document).ready(function() {
 		$(".status-scroll-container").first().animate({ scrollTop: $(".status-scroll-container").prop("scrollHeight")}, 1000);
 	}
 	var scroll_container = $('<div class="status-scroll-container"></div>');
-
-	// Add initial entries.
-	addStatusEntry("Welcome to Battleboat!");
 
 	// Install scroll container.
 	scroll_container.appendTo(status_container);
@@ -126,21 +138,67 @@ $(document).ready(function() {
 	set_up_container.append($('<h3>New Game</h3>'));
 	set_up_container.append($('<h4>Select Mode</h3>'));
 	set_up_container.append($('<div class="btn-group"> \
-		<button class="btn btn-primary new-game-btn" data-mode="regular">Classic</button> \
-		<button class="btn btn-danger new-game-btn" data-mode="salvo" data-toggle="tooltip" data-placement="top" title="Multiple shots per turn depending on ship count">Salvo</button> \
+		<button type="button" class="btn btn-primary new-game-btn waves-effect" data-mode="regular">Classic</button> \
+		<button type="button" class="btn btn-danger new-game-btn waves-effect" data-mode="salvo" data-toggle="tooltip" data-placement="top" title="Multiple shots per turn depending on ship count">Salvo</button> \
 	</div>'));
 	set_up_container.append($('<h3>Join Game</h3>'));
 	set_up_container.append($('<div class="btn-group"> \
-		<button class="btn btn-success join-game-btn" data-type="first_avail">First Available</button> \
-		<button class="btn btn-default join-game-btn" data-type="by_game_id">By Game ID</button> \
+		<button type="button" class="btn btn-success join-game-btn waves-effect" data-type="first_avail">First Available</button> \
+		<button type="button" class="btn btn-default join-game-btn waves-effect" data-type="by_game_id">By Game ID</button> \
 	</div>'));
+
+	// Install set up container.
+	set_up_container.appendTo($('#newGameModal'));
 
 	// Install click handlers for new game buttons.
 	$('.new-game-btn').click(function() {
 		var mode = $(this).data("mode");
 
-		// Add database entry.
-		// ...
+		// Generate database entry.
+		var state = store.getState();
+		var user_info = state["user_info"];
+		var user_states = {};
+		user_states[user_info.uid] = "SETUP_PENDING";
+		var timestamp = Date.now();
+		var entry = {
+			users: [
+				[user_info.uid, user_info.displayName, user_info.photoURL]
+			],
+			mode: mode,
+			user_states: user_states,
+			board_state: [],
+			update_timestamp: timestamp,
+			started: false
+		};
+
+		// Generate database insertion query.
+		var newPostKey = firebase.database().ref().child('games').push().key;
+		var updates = {};
+        updates['/games/' + newPostKey] = entry;
+
+		// Execute database insertion.
+        console.log(firebase.database().ref().update(updates));
+
+		// Save current state.
+		store.dispatch({
+			type: "UPDATE_GAME_STATE",
+			data: {
+				"mode": mode,
+				"entry_key": newPostKey,
+				"board_state": [],
+				"user_states": user_states,
+				"update_timestamp": timestamp,
+				"started": false
+			}
+		});
+
+		// Set up searching modal.
+		$('#progressModal').find('.progress-modal-code').text(newPostKey);
+
+		// Fade out new game modal, fade in searching modal.
+		$('#newGameModal').fadeOut();
+		$('#progressModal').fadeIn();
+		addStatusEntry("Searching for opponent...");
 	});
 
 	// Install click handlers for join game buttons.
@@ -149,9 +207,6 @@ $(document).ready(function() {
 
 		// ...
 	});
-
-	// Install set up container.
-	set_up_container.appendTo($('#newGameModal'));
 
 	// Initialize sign in prompt. //
 	// Set up container.
@@ -194,6 +249,7 @@ $(document).ready(function() {
 					accessToken: accessToken,
 					providerData: providerData
                 };
+				store.dispatch({ type: 'STORE_USER_INFO', data: user_info })
 
                 // Fill in account info.
                 var account_box = $('.account-info-box');
@@ -207,8 +263,14 @@ $(document).ready(function() {
 					}, 20);
 				});
 
-				// Hide sign in modal.
-				$('#signInModal').fadeOut();
+				// Add status entry.
+				var name_arr = displayName.split(" ");
+				if(name_arr.length > 1){
+					addStatusEntry("Welcome back, " + name_arr[0] + "!");
+				}
+
+				// Hide other modals.
+				$('.game-modal').hide();
 
                 // Display account area.
                 $('#account_area').show();
@@ -217,7 +279,12 @@ $(document).ready(function() {
 				$('#newGameModal').fadeIn();
             });
         } else {
+			// Hide other modals and login-only areas.
         	$('#account_area').hide();
+			$('.game-modal').hide();
+
+			// Add initial status entry.
+			addStatusEntry("Welcome to Battleboat! Please sign in to start playing.");
 
 			// Display sign in modal.
 			$('#signInModal').fadeIn();
