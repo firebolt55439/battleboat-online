@@ -42,7 +42,10 @@
 <body>
 	<div id="header" class="text-center">
 		<h1>Battleboat Online</h1>
+		<h4 id="versusText">vs.</h4>
 	</div>
+	<div id="user_area1" class="user-area user-area-left"></div>
+	<div id="user_area2" class="user-area user-area-right"></div>
 	<div id="game_area"></div>
 	<div id="status_area">
 		<h3 class="text-center">Events Log</h3>
@@ -52,8 +55,8 @@
 	</div>
 	<div class="game-modal game-modal-wider" id="newGameModal" style="display:none;"></div>
 	<div class="game-modal" id="signInModal" style="display:none;"></div>
-	<div class="game-modal game-modal-narrower text-center" id="progressModal" style="display: none;">
-		<h3 class="progress-modal-header cyan-blue">Searching for Opponent</h3>
+	<div class="game-modal game-modal-wider game-modal-longer text-center" id="progressModal" style="display: none;">
+		<h3 class="progress-modal-header cyan-blue">Searching for Opponent...</h3>
 		<h4 class="progress-modal-subheader">Game ID:</h4><code class="progress-modal-code"></code><br /><br />
 		<div class="preloader-wrapper big active">
 		      <div class="spinner-layer spinner-blue">
@@ -96,8 +99,7 @@
 		        </div>
 		      </div>
 		    </div>
-		</div><br /><br />
-
+		</div>
 	</div>
 
 	<!-- Scripts -->

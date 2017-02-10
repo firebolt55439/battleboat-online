@@ -6,6 +6,10 @@ h1, h3 {
 	color: #21b4ba;
 }
 
+.hidden {
+	display: none;
+}
+
 .grid-square {
 	position: relative;
 	display: block;
@@ -159,6 +163,10 @@ h1, h3 {
 	width: 30%;
 }
 
+.game-modal-longer {
+	padding: 50px;
+}
+
 .game-modal-container {
 	padding: 50px;
 	padding-bottom: 50px;
@@ -168,6 +176,27 @@ h1, h3 {
 	max-width: 100%;
 	max-height: 100%;
 	min-width: 75px;
+}
+
+.user-area {
+	position: absolute;
+	padding-top: 10px;
+	/*background-color: rgba(19,36,43,0.5);*/
+	border-radius: 5px;
+}
+
+.user-area-left {
+	top: 0;
+	left: 20%;
+}
+
+.user-area-right {
+	top: 0;
+	left: 70%;
+}
+
+.user-info-box {
+
 }
 
 .cyan-blue {

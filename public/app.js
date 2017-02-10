@@ -1,4 +1,5 @@
 // TODO: Salvo and normal variants.
+// TODO: Play AI if no opponent found in n minutes
 var setup_complete = false;
 
 $(document).ready(function() {
@@ -61,6 +62,61 @@ $(document).ready(function() {
 
 	// Install account container.
 	status_container.appendTo($('#account_area'));
+
+	// Set up the user areas. //
+	// Hide versus text.
+	$('#versusText').hide();
+
+	// Set up the two user areas on either side.
+	for(var i = 1; i <= 2; i++){
+		var container = $('#user_area' + i.toString());
+		container.append($('<div class="media user-info-box"> \
+			<div class="media-left ' + hidden + '"> \
+				<img class="media-object image-resize-to-fit img-circle" src="" alt="Account photo"></img> \
+			</div> \
+			<div class="media-body"> \
+				<h4 class="media-heading cyan-blue">User Name</h4> \
+				<p class="media-text"></p> \
+			</div> \
+		</div>'));
+		/*
+		<div class="media">
+		<div class="media-body">
+			<h4 class="media-heading">Media heading</h4>
+		</div>
+		<div class="media-right"></div>
+		</div>
+		*/
+	}
+	$('.user-info-box').find('.media-text').text("Client/host");
+	$('.user-info-box').hide();
+
+	// Set up helper functions to update user areas.
+	var updateUserAreas = function(users){
+		// uid, name, photoURL
+		// Figure out which is us and which is them.
+		var cur_state = store.getState();
+		var our_uid = cur_state.user_info.uid;
+		var are_we_client = cur_state.game_state.client;
+		var us = users.filter(function(a){ return a[0] == our_uid; })[0];
+		var them = users.filter(function(a){ return a[0] != our_uid; })[0];
+
+		// Update interface accoridngly.
+		var client_text = [
+			"Host",
+			"Client"
+		];
+		$('.user-area-left').find('.media-heading').text(them[1]);
+		$('.user-area-left').find('.media-text').text(client_text[+ !are_we_client]); // unary + operator casts bool to int
+		$('.user-area-left').find('.media-object').attr('src', them[2]);
+		$('.user-area-right').find('.media-heading').text(us[1]);
+		$('.user-area-right').find('.media-text').text(client_text[+ are_we_client]);
+		$('.user-area-right').find('.media-object').attr('src', us[2]);
+
+		// Display interface changes.
+		$('#versusText').fadeIn();
+		$('.user-info-box').fadeIn();
+	}
 
 	// Set up the 10x10 game grid. //
 	// Set up the container.
@@ -157,15 +213,13 @@ $(document).ready(function() {
 		// Generate database entry.
 		var state = store.getState();
 		var user_info = state["user_info"];
-		var user_states = {};
-		user_states[user_info.uid] = "SETUP_PENDING";
 		var timestamp = Date.now();
 		var entry = {
 			users: [
 				[user_info.uid, user_info.displayName, user_info.photoURL]
 			],
 			mode: mode,
-			user_states: user_states,
+			user_states: ["SETUP_PENDING"],
 			board_state: [],
 			update_timestamp: timestamp,
 			started: false
@@ -173,6 +227,7 @@ $(document).ready(function() {
 
 		// Generate database insertion query.
 		var newPostKey = firebase.database().ref().child('games').push().key;
+		entry["id"] = newPostKey;
 		var updates = {};
         updates['/games/' + newPostKey] = entry;
 
@@ -183,29 +238,151 @@ $(document).ready(function() {
 		store.dispatch({
 			type: "UPDATE_GAME_STATE",
 			data: {
+				"client": false,
 				"mode": mode,
 				"entry_key": newPostKey,
 				"board_state": [],
-				"user_states": user_states,
+				"user_states": entry.user_states,
 				"update_timestamp": timestamp,
 				"started": false
 			}
 		});
 
 		// Set up searching modal.
+		$('#progressModal').find('.progress-modal-header').text("Waiting for an opponent...")
+		$('#progressModal').find('.progress-modal-code').show();
+		$('#progressModal').find('.progress-modal-subheader').show();
 		$('#progressModal').find('.progress-modal-code').text(newPostKey);
 
 		// Fade out new game modal, fade in searching modal.
-		$('#newGameModal').fadeOut();
-		$('#progressModal').fadeIn();
-		addStatusEntry("Searching for opponent...");
+		$('#newGameModal').hide();
+		$('#progressModal').show();
+		addStatusEntry("Waiting for an opponent...");
+
+		// Subscribe to game database changes.
+		var gameRef = db.ref("games/" + newPostKey);
+		var onGameDataChange = function(changed_data){
+			gameRef.once("value", function(data) {
+				console.log("Update", data.val());
+				if(data.started){
+					console.log("Game started! Yay!");
+					console.log(data.users[1]);
+					updateUserAreas(data.users);
+					// ...
+				}
+
+				// ...
+			});
+		}
+		gameRef.on("child_added", onGameDataChange);
+		gameRef.on("child_changed", onGameDataChange);
+
+		// ... gameRef.off("child_added", onGameDataChange)
 	});
 
 	// Install click handlers for join game buttons.
 	$('.join-game-btn').click(function() {
 		var type = $(this).data("type");
 
-		// ...
+		// Prompt for game id.
+		if(type == "by_game_id"){
+			// ...
+			return;
+		}
+
+		// Set up searching modal.
+		$('#progressModal').find('.progress-modal-header').text("Searching for an opponent...")
+		$('#progressModal').find('.progress-modal-code').hide();
+		$('#progressModal').find('.progress-modal-subheader').hide();
+
+		// Fade out new game modal, fade in searching modal.
+		$('#newGameModal').hide();
+		$('#progressModal').show();
+		addStatusEntry("Searching for an opponent...");
+
+		// Fetch logged-in user state.
+		var user_info = store.getState().user_info;
+
+		// Search database in a background thread.
+		var canSearch = true, searchComplete = false;
+		setTimeout(function() {
+			// Obtain a reference.
+			var ref = db.ref();
+
+			// Search current games.
+			var searchCurrentGames = function(snapshot){
+				if(!canSearch || searchComplete) return;
+				//console.log(snapshot.val().update_timestamp);
+				snapshot.forEach(function(child) {
+					var on = child.val();
+					if(on.started) return;
+					if(on.users[0][0] == user_info.uid) return; // can't join our own game
+
+					// Filter by timestamp.
+					var last_updated = on.update_timestamp;
+					var threshold_minutes = 2.5; // max age
+					var diff = (Date.now() - last_updated) / 1000;
+					console.log(on, diff);
+					if(diff < 60 * threshold_minutes){
+						console.log("Found joinable game", on);
+						searchComplete = true;
+						setTimeout(function() {
+							// Update user interface.
+							$('#progressModal').find('.progress-modal-header').text("Joining game...");
+							$('#progressModal').find('.progress-modal-code').show();
+							$('#progressModal').find('.progress-modal-subheader').show();
+							$('#progressModal').find('.progress-modal-code').text(on.id);
+
+							// Update database entry object.
+							on.started = true;
+							on.users.push([user_info.uid, user_info.displayName, user_info.photoURL]);
+							on.user_states.push("SETUP_PENDING");
+							on.update_timestamp = Date.now();
+							on.board_state = [];
+
+							// Update database with new entry to reflect joining of game.
+							// TODO: Security rules so no one except joined users can write
+							// if game has started but all auth users can read/spectate.
+							var updates = {};
+							updates["/games/" + on.id] = on;
+							ref.update(updates);
+
+							// Save current state.
+							store.dispatch({
+								type: "UPDATE_GAME_STATE",
+								data: {
+									"client": true,
+									"mode": on.mode,
+									"entry_key": on.id,
+									"board_state": [],
+									"user_states": on.user_states,
+									"update_timestamp": on.update_timestamp,
+									"started": true
+								}
+							});
+
+							// Update user areas.
+							updateUserAreas(on.users);
+
+							// ...
+						}, 10);
+						// ...
+					}
+
+					// ...
+				});
+			};
+			ref.child("games").orderByChild("update_timestamp").limitToLast(100).once("value", searchCurrentGames);
+
+			// Subscribe to game changes.
+			var handleGameChange = function(data){
+				if(!canSearch || searchComplete) return;
+				// data is child
+				// ...
+				//ref.child("games").off("child_added", handleGameChange);
+			}
+			ref.child("games").orderByChild("update_timestamp").on("child_added", handleGameChange);
+		}, 20);
 	});
 
 	// Initialize sign in prompt. //
@@ -231,8 +408,11 @@ $(document).ready(function() {
 	});
 
 	// Install authentication handler.
+	var isLoggedIn = undefined;
 	firebase.auth().onAuthStateChanged(function(user) {
 		if(user){
+			if(isLoggedIn === true) return; // timeout occurred
+			isLoggedIn = true;
 			var displayName = user.displayName;
             var email = user.email;
             var emailVerified = user.emailVerified;
@@ -279,6 +459,8 @@ $(document).ready(function() {
 				$('#newGameModal').fadeIn();
             });
         } else {
+			isLoggedIn = false;
+
 			// Hide other modals and login-only areas.
         	$('#account_area').hide();
 			$('.game-modal').hide();
@@ -288,8 +470,6 @@ $(document).ready(function() {
 
 			// Display sign in modal.
 			$('#signInModal').fadeIn();
-
-        	// ...
         }
     });
 
