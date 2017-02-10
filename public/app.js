@@ -71,7 +71,7 @@ $(document).ready(function() {
 	for(var i = 1; i <= 2; i++){
 		var container = $('#user_area' + i.toString());
 		container.append($('<div class="media user-info-box"> \
-			<div class="media-left ' + hidden + '"> \
+			<div class="media-left"> \
 				<img class="media-object image-resize-to-fit img-circle" src="" alt="Account photo"></img> \
 			</div> \
 			<div class="media-body"> \
@@ -106,12 +106,12 @@ $(document).ready(function() {
 			"Host",
 			"Client"
 		];
-		$('.user-area-left').find('.media-heading').text(them[1]);
-		$('.user-area-left').find('.media-text').text(client_text[+ !are_we_client]); // unary + operator casts bool to int
-		$('.user-area-left').find('.media-object').attr('src', them[2]);
-		$('.user-area-right').find('.media-heading').text(us[1]);
-		$('.user-area-right').find('.media-text').text(client_text[+ are_we_client]);
-		$('.user-area-right').find('.media-object').attr('src', us[2]);
+		$('.user-area-right').find('.media-heading').text(them[1]);
+		$('.user-area-right').find('.media-text').text(client_text[+ !are_we_client]); // unary + operator casts bool to int
+		$('.user-area-right').find('.media-object').attr('src', them[2]);
+		$('.user-area-left').find('.media-heading').text("You");
+		$('.user-area-left').find('.media-text').text(client_text[+ are_we_client]);
+		$('.user-area-left').find('.media-object').attr('src', us[2]);
 
 		// Display interface changes.
 		$('#versusText').fadeIn();
@@ -222,7 +222,7 @@ $(document).ready(function() {
 			user_states: ["SETUP_PENDING"],
 			board_state: [],
 			update_timestamp: timestamp,
-			started: false
+			started: 0
 		};
 
 		// Generate database insertion query.
@@ -244,7 +244,7 @@ $(document).ready(function() {
 				"board_state": [],
 				"user_states": entry.user_states,
 				"update_timestamp": timestamp,
-				"started": false
+				"started": entry.started
 			}
 		});
 
@@ -261,15 +261,48 @@ $(document).ready(function() {
 
 		// Subscribe to game database changes.
 		var gameRef = db.ref("games/" + newPostKey);
+		var hasStarted = 0;
 		var onGameDataChange = function(changed_data){
 			gameRef.once("value", function(data) {
-				console.log("Update", data.val());
-				if(data.started){
+				// Get current game state.
+				var game_state = store.getState().game_state;
+
+				// See if there are any changes.
+				data = data.val();
+				console.log("Update", data);
+
+				// Update store as necessary.
+				var new_state = {
+					"client": game_state.client,
+					"mode": data.mode,
+					"entry_key": game_state.entry_key,
+					"board_state": data.board_state,
+					"user_states": data.user_states,
+					"update_timestamp": data.update_timestamp,
+					"started": data.started
+				};
+				if(data.started == 1 && !hasStarted){
+					hasStarted = 1;
 					console.log("Game started! Yay!");
 					console.log(data.users[1]);
+
+					// Update interface as necessary.
 					updateUserAreas(data.users);
+					$('#progressModal').find('.progress-modal-header').text("Opponent joined, initializing...");
+
+					// Send an ACK to the joined player.
+					var updates = {};
+					updates['started'] = 2;
+					gameRef.update(updates);
+
 					// ...
+				} else if(data.started == 3 && hasStarted == 1){
+					hasStarted = 2;
+
+					// Update interface as necessary.
+					$('#progressModal').fadeOut();
 				}
+				store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
 
 				// ...
 			});
@@ -328,13 +361,13 @@ $(document).ready(function() {
 						searchComplete = true;
 						setTimeout(function() {
 							// Update user interface.
-							$('#progressModal').find('.progress-modal-header').text("Joining game...");
+							$('#progressModal').find('.progress-modal-header').text("Found game, joining...");
 							$('#progressModal').find('.progress-modal-code').show();
 							$('#progressModal').find('.progress-modal-subheader').show();
 							$('#progressModal').find('.progress-modal-code').text(on.id);
 
 							// Update database entry object.
-							on.started = true;
+							on.started = 1;
 							on.users.push([user_info.uid, user_info.displayName, user_info.photoURL]);
 							on.user_states.push("SETUP_PENDING");
 							on.update_timestamp = Date.now();
@@ -357,12 +390,58 @@ $(document).ready(function() {
 									"board_state": [],
 									"user_states": on.user_states,
 									"update_timestamp": on.update_timestamp,
-									"started": true
+									"started": on.started
 								}
 							});
 
 							// Update user areas.
 							updateUserAreas(on.users);
+
+							// Listen for changes.
+							var gameRef = db.ref("games/" + on.id.toString());
+							var hasAcked = false;
+							var game_id = on.id;
+							var onGameDataChange = function(changed_data){
+								gameRef.once("value", function(data) {
+									// Get current game state.
+									var game_state = store.getState().game_state;
+
+									// See if there are any changes.
+									data = data.val();
+									console.log("Update", data);
+
+									// Update store as necessary.
+									var new_state = {
+										"client": game_state.client,
+										"mode": data.mode,
+										"entry_key": game_state.entry_key,
+										"board_state": data.board_state,
+										"user_states": data.user_states,
+										"update_timestamp": data.update_timestamp,
+										"started": data.started
+									};
+									if(data.started == 2 && !hasAcked){
+										hasAcked = true;
+										console.log("Game started with ack! Yay!");
+										console.log(data.users[0]);
+
+										// Send a reply ACK.
+										var updates = {};
+										updates["started"] = 3;
+										gameRef.update(updates);
+
+										// Update interface as necessary.
+										$('#progressModal').fadeOut();
+
+										// ...
+									}
+									store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
+
+									// ...
+								});
+							}
+							gameRef.on("child_added", onGameDataChange);
+							gameRef.on("child_changed", onGameDataChange);
 
 							// ...
 						}, 10);

@@ -10,6 +10,8 @@ h1, h3 {
 	display: none;
 }
 
+/* Grid styling */
+
 .grid-square {
 	position: relative;
 	display: block;
@@ -77,6 +79,8 @@ h1, h3 {
 	border-radius: 20px;
 }
 
+/* Status area */
+
 #status_area {
 	position: absolute;
 	display: block;
@@ -87,21 +91,6 @@ h1, h3 {
 }
 
 .status-container {
-	padding-top: 10px;
-	background-color: rgba(19,36,43,0.5);
-	border-radius: 5px;
-}
-
-#account_area {
-	position: absolute;
-	display: block;
-	top: 0;
-	right: 1%;
-	width: 15%;
-	height: 15%;
-}
-
-.account-container {
 	padding-top: 10px;
 	background-color: rgba(19,36,43,0.5);
 	border-radius: 5px;
@@ -119,6 +108,25 @@ h1, h3 {
 	color: #cff8fa;
 	border-bottom: 1px solid #337ab7;
 }
+
+/* Account area */
+
+#account_area {
+	position: absolute;
+	display: block;
+	top: 0;
+	right: 1%;
+	width: 15%;
+	height: 15%;
+}
+
+.account-container {
+	padding-top: 10px;
+	background-color: rgba(19,36,43,0.5);
+	border-radius: 5px;
+}
+
+/* Grid square styling */
 
 .missile_hover {
 	width: 100%;
@@ -139,6 +147,8 @@ h1, h3 {
 	padding-bottom: 0px;
 	padding: 0px;
 }
+
+/* Modal styling */
 
 .game-modal {
 	position: absolute;
@@ -172,6 +182,8 @@ h1, h3 {
 	padding-bottom: 50px;
 }
 
+/* Account or user area styling */
+
 .image-resize-to-fit {
 	max-width: 100%;
 	max-height: 100%;
@@ -199,6 +211,12 @@ h1, h3 {
 
 }
 
+/* Versus text styling */
+#versusText {
+	color: #ff5e00;
+}
+
+/* Color definition(s) */
 .cyan-blue {
 	color: #236486;
 }
