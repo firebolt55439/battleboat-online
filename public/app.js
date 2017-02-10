@@ -1,6 +1,6 @@
 // TODO: Salvo and normal variants.
 // TODO: Play AI if no opponent found in n minutes
-var setup_complete = false;
+var setup_complete = false, gameRef = undefined;
 
 $(document).ready(function() {
 	// Create a redux store.
@@ -17,6 +17,45 @@ $(document).ready(function() {
 		}
 	}
 	var store = Redux.createStore(store_handler);
+
+	// Define main game event handler.
+	var masterGameHandler = function(changed_data){
+		// Check if the event is interesting (e.g. worth a database fetch).
+		var key = changed_data.getKey();
+		console.log(key);
+		if(key !== "turn_end_key") return;
+
+		// Grab current game state from database.
+		gameRef.once("value", function(data) {
+			// Get current game state.
+			var cur_state = store.getState();
+			var game_state = cur_state.game_state;
+			var are_we_client = cur_state.game_state.client;
+
+			// Retrieve value from reference.
+			data = data.val();
+			console.log("Master game handler", data);
+
+			// Update store as necessary.
+			var new_state = {
+				"client": game_state.client,
+				"mode": game_state.mode,
+				"entry_key": game_state.entry_key,
+				"board_state": data.board_state,
+				"user_states": data.user_states,
+				"update_timestamp": data.update_timestamp,
+				"started": data.started
+			};
+
+			// Send new state to store.
+			store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
+
+			// Handle data changes and update interface accordingly.
+			// TODO: Start setup, etc.
+			// TODO: Update board state, deal with synchronization, etc.
+			// ...
+		});
+	};
 
 	// Grab a database reference.
 	var db = firebase.database();
@@ -260,9 +299,11 @@ $(document).ready(function() {
 		addStatusEntry("Waiting for an opponent...");
 
 		// Subscribe to game database changes.
-		var gameRef = db.ref("games/" + newPostKey);
+		gameRef = db.ref("games/" + newPostKey);
 		var hasStarted = 0;
 		var onGameDataChange = function(changed_data){
+			console.log(changed_data.getKey());
+			if(changed_data.getKey() !== "started") return; // don't waste bandwidth
 			gameRef.once("value", function(data) {
 				// Get current game state.
 				var game_state = store.getState().game_state;
@@ -301,16 +342,34 @@ $(document).ready(function() {
 
 					// Update interface as necessary.
 					$('#progressModal').fadeOut();
+					addStatusEntry("Found an opponent!");
+
+					// Detach this callback and defer to main callback.
+					gameRef.off("child_added", onGameDataChange);
+					gameRef.off("child_changed", onGameDataChange);
+					gameRef.on("child_added", masterGameHandler);
+					gameRef.on("child_changed", masterGameHandler);
+
+					// Inform opponent we are starting setup.
+					var updates = {};
+					updates["user_states/0"] = "DOING_SETUP";
+					gameRef.update(updates);
 				}
 				store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
-
-				// ...
 			});
 		}
 		gameRef.on("child_added", onGameDataChange);
 		gameRef.on("child_changed", onGameDataChange);
-
-		// ... gameRef.off("child_added", onGameDataChange)
+		var interval_timer = undefined;
+		var updateTimestamp = function() {
+			if(hasStarted > 0){
+				clearInterval(interval_timer);
+			}
+			var updates = {};
+			updates['update_timestamp'] = Date.now();
+			gameRef.update(updates);
+		}
+		interval_timer = setInterval(updateTimestamp, 10000); // update timestamp every 10 seconds
 	});
 
 	// Install click handlers for join game buttons.
@@ -343,116 +402,129 @@ $(document).ready(function() {
 			var ref = db.ref();
 
 			// Search current games.
+			var threshold_minutes = .5; // max age = 30 seconds (since updated every 10 seconds)
 			var searchCurrentGames = function(snapshot){
 				if(!canSearch || searchComplete) return;
+				var on = snapshot.val();
 				//console.log(snapshot.val().update_timestamp);
-				snapshot.forEach(function(child) {
-					var on = child.val();
-					if(on.started) return;
-					if(on.users[0][0] == user_info.uid) return; // can't join our own game
+				//console.log(snapshot);
+				//console.log(snapshot.val());
+				console.log(on);
+				if(on.started) return;
+				if(on.users[0][0] == user_info.uid) return; // can't join your own game
 
-					// Filter by timestamp.
-					var last_updated = on.update_timestamp;
-					var threshold_minutes = 2.5; // max age
-					var diff = (Date.now() - last_updated) / 1000;
-					console.log(on, diff);
-					if(diff < 60 * threshold_minutes){
-						console.log("Found joinable game", on);
-						searchComplete = true;
-						setTimeout(function() {
-							// Update user interface.
-							$('#progressModal').find('.progress-modal-header').text("Found game, joining...");
-							$('#progressModal').find('.progress-modal-code').show();
-							$('#progressModal').find('.progress-modal-subheader').show();
-							$('#progressModal').find('.progress-modal-code').text(on.id);
+				// Filter by timestamp.
+				var last_updated = on.update_timestamp;
+				var diff = (Date.now() - last_updated) / 1000;
+				console.log(on, diff);
+				if(diff < 60 * threshold_minutes){
+					// Mark search as complete.
+					console.log("Found joinable game", on);
+					searchComplete = true;
+					ref.off("child_added", searchCurrentGames);
+					//ref.off("child_changed", searchCurrentGames);
 
-							// Update database entry object.
-							on.started = 1;
-							on.users.push([user_info.uid, user_info.displayName, user_info.photoURL]);
-							on.user_states.push("SETUP_PENDING");
-							on.update_timestamp = Date.now();
-							on.board_state = [];
+					// Join game in background thread.
+					setTimeout(function() {
+						// Update user interface.
+						$('#progressModal').find('.progress-modal-header').text("Found game, joining...");
+						$('#progressModal').find('.progress-modal-code').show();
+						$('#progressModal').find('.progress-modal-subheader').show();
+						$('#progressModal').find('.progress-modal-code').text(on.id);
 
-							// Update database with new entry to reflect joining of game.
-							// TODO: Security rules so no one except joined users can write
-							// if game has started but all auth users can read/spectate.
-							var updates = {};
-							updates["/games/" + on.id] = on;
-							ref.update(updates);
+						// Update database entry object.
+						on.started = 1;
+						on.users.push([user_info.uid, user_info.displayName, user_info.photoURL]);
+						on.user_states.push("SETUP_PENDING");
+						on.update_timestamp = Date.now();
+						on.board_state = [];
 
-							// Save current state.
-							store.dispatch({
-								type: "UPDATE_GAME_STATE",
-								data: {
-									"client": true,
-									"mode": on.mode,
-									"entry_key": on.id,
-									"board_state": [],
-									"user_states": on.user_states,
-									"update_timestamp": on.update_timestamp,
-									"started": on.started
-								}
-							});
+						// Update database with new entry to reflect joining of game.
+						// TODO: Security rules so no one except joined users can write
+						// if game has started but all auth users can read/spectate.
+						var updates = {};
+						updates["/games/" + on.id] = on;
+						ref.update(updates);
 
-							// Update user areas.
-							updateUserAreas(on.users);
-
-							// Listen for changes.
-							var gameRef = db.ref("games/" + on.id.toString());
-							var hasAcked = false;
-							var game_id = on.id;
-							var onGameDataChange = function(changed_data){
-								gameRef.once("value", function(data) {
-									// Get current game state.
-									var game_state = store.getState().game_state;
-
-									// See if there are any changes.
-									data = data.val();
-									console.log("Update", data);
-
-									// Update store as necessary.
-									var new_state = {
-										"client": game_state.client,
-										"mode": data.mode,
-										"entry_key": game_state.entry_key,
-										"board_state": data.board_state,
-										"user_states": data.user_states,
-										"update_timestamp": data.update_timestamp,
-										"started": data.started
-									};
-									if(data.started == 2 && !hasAcked){
-										hasAcked = true;
-										console.log("Game started with ack! Yay!");
-										console.log(data.users[0]);
-
-										// Send a reply ACK.
-										var updates = {};
-										updates["started"] = 3;
-										gameRef.update(updates);
-
-										// Update interface as necessary.
-										$('#progressModal').fadeOut();
-
-										// ...
-									}
-									store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
-
-									// ...
-								});
+						// Save current state.
+						store.dispatch({
+							type: "UPDATE_GAME_STATE",
+							data: {
+								"client": true,
+								"mode": on.mode,
+								"entry_key": on.id,
+								"board_state": [],
+								"user_states": on.user_states,
+								"update_timestamp": on.update_timestamp,
+								"started": on.started
 							}
-							gameRef.on("child_added", onGameDataChange);
-							gameRef.on("child_changed", onGameDataChange);
+						});
 
-							// ...
-						}, 10);
-						// ...
-					}
+						// Update user areas.
+						updateUserAreas(on.users);
 
+						// Listen for changes.
+						gameRef = db.ref("games/" + on.id.toString());
+						var hasAcked = false;
+						var game_id = on.id;
+						var onGameDataChange = function(changed_data){
+							if(changed_data.getKey() !== "started") return;
+							gameRef.once("value", function(data) {
+								// Get current game state.
+								var game_state = store.getState().game_state;
+
+								// See if there are any changes.
+								data = data.val();
+								console.log("Update", data);
+
+								// Update store as necessary.
+								var new_state = {
+									"client": game_state.client,
+									"mode": data.mode,
+									"entry_key": game_state.entry_key,
+									"board_state": data.board_state,
+									"user_states": data.user_states,
+									"update_timestamp": data.update_timestamp,
+									"started": data.started
+								};
+								if(data.started == 2 && !hasAcked){
+									hasAcked = true;
+									console.log("Game started with ack! Yay!");
+									console.log(data.users[0]);
+
+									// Update interface as necessary.
+									$('#progressModal').fadeOut();
+									addStatusEntry("Found an opponent!");
+
+									// Detach this callback and defer to main callback.
+									gameRef.off("child_added", onGameDataChange);
+									gameRef.off("child_changed", onGameDataChange);
+									gameRef.on("child_added", masterGameHandler);
+									gameRef.on("child_changed", masterGameHandler);
+
+									// Send a reply ACK.
+									var updates = {};
+									updates["started"] = 3;
+									updates["user_states/1"] = "DOING_SETUP";
+									gameRef.update(updates);
+								}
+								store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
+							});
+						}
+						gameRef.on("child_added", onGameDataChange);
+						gameRef.on("child_changed", onGameDataChange);
+					}, 10);
 					// ...
-				});
-			};
-			ref.child("games").orderByChild("update_timestamp").limitToLast(100).once("value", searchCurrentGames);
+				}
 
+				// ...
+			};
+			var threshold = Date.now() - 1000 * 60 * threshold_minutes;
+			ref.child("games").orderByChild("update_timestamp").startAt(threshold).on("child_added", searchCurrentGames);
+			//ref.child("games").orderByChild("update_timestamp").startAt(threshold).on("child_changed", searchCurrentGames);
+
+			/*
+			// TODO
 			// Subscribe to game changes.
 			var handleGameChange = function(data){
 				if(!canSearch || searchComplete) return;
@@ -461,6 +533,7 @@ $(document).ready(function() {
 				//ref.child("games").off("child_added", handleGameChange);
 			}
 			ref.child("games").orderByChild("update_timestamp").on("child_added", handleGameChange);
+			*/
 		}, 20);
 	});
 
@@ -552,7 +625,10 @@ $(document).ready(function() {
         }
     });
 
-	// Initialize tooltips.
+	// Set up radar. //
+	
+
+	// Initialize tooltips. //
 	$(function () {
 		$('[data-toggle="tooltip"]').tooltip()
 	});
