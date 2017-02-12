@@ -57,12 +57,23 @@
 		<h3 class="text-center">Profile</h3>
 	</div>
 	<div class="game-modal game-modal-wider" id="newGameModal" style="display:none;"></div>
-	<div class="game-modal" id="signInModal" style="display:none;"></div>
-	<div class="game-modal text-center game-modal-wider game-modal-longer" id="warningModal" style="display:none; z-index: 10002;">
+	<div class="fixed-modal game-modal" id="signInModal" style="display:none;"></div>
+	<div class="fixed-modal text-center game-modal-wider game-modal-longer" id="dialogModal" style="display:none; z-index: 10002;">
+		<h3 class="dialog-modal-header cyan-blue">Dialog</h3>
+		<h4 class="dialog-modal-subheader">Content</h4>
+		<button type="button" class="btn btn-flat waves-effect">OK</button>
+	</div>
+	<div class="fixed-modal text-center game-modal-wider game-modal-longer" id="warningModal" style="display:none; z-index: 10002;">
 		<h3 class="warning-modal-header cyan-blue">Warning</h3>
 		<h4 class="warning-modal-subheader">Content</h4>
 	</div>
-	<div class="game-modal game-modal-wider game-modal-longer text-center" id="progressModal" style="display: none;">
+	<div class="finish-setup-button" style="display: none;">
+		<button type="button" class="btn btn-deep-purple btn-rounded waves-effect">Finish Setup</button>
+	</div>
+	<div class="end-turn-button" style="display: none;">
+		<button type="button" class="btn btn-deep-orange btn-rounded waves-effect">Fire!</button>
+	</div>
+	<div class="fixed-modal game-modal game-modal-wider game-modal-longer text-center" id="progressModal" style="display: none;">
 		<h3 class="progress-modal-header cyan-blue">Searching for Opponent...</h3>
 		<h4 class="progress-modal-subheader">Game ID:</h4><code class="progress-modal-code"></code><br /><br />
 		<div class="preloader-wrapper big active">

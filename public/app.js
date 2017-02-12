@@ -1,6 +1,79 @@
 // TODO: Salvo and normal variants.
 // TODO: Play AI if no opponent found in n minutes
+// TODO: Turn-based action and animations (when receiving opponent's moves, show
+// nice uppercase typewriter red text saying your/their turn and an animated missile
+// svg animation for what they fire)
+// TODO: Your ships (w/ svg images) on right and n squares side-by-side with filled in
+// with x's or in red if hit with n = ship length and put ship name and label there as well
+// TODO: Ensure reusability of interface for another game
 var setup_complete = false, gameRef = undefined;
+
+// jQuery mixin to remove all classes with prefix.
+$.fn.removeClassPrefix = function(prefix) {
+	// From http://stackoverflow.com/questions/57812/remove-all-classes-that-begin-with-a-certain-string.
+    this.each(function(i, el) {
+        var classes = el.className.split(" ").filter(function(c) {
+            return c.lastIndexOf(prefix, 0) !== 0;
+        });
+        el.className = $.trim(classes.join(" "));
+    });
+    return this;
+};
+
+// LZW-compress a string
+function lzw_encode(s) {
+	// From https://gist.github.com/revolunet/843889.
+    var dict = {};
+    var data = (s + "").split("");
+    var out = [];
+    var currChar;
+    var phrase = data[0];
+    var code = 256;
+    for (var i=1; i<data.length; i++) {
+        currChar=data[i];
+        if (dict[phrase + currChar] != null) {
+            phrase += currChar;
+        }
+        else {
+            out.push(phrase.length > 1 ? dict[phrase] : phrase.charCodeAt(0));
+            dict[phrase + currChar] = code;
+            code++;
+            phrase=currChar;
+        }
+    }
+    out.push(phrase.length > 1 ? dict[phrase] : phrase.charCodeAt(0));
+    for (var i=0; i<out.length; i++) {
+        out[i] = String.fromCharCode(out[i]);
+    }
+    return out.join("");
+}
+
+// Decompress an LZW-encoded string
+function lzw_decode(s) {
+	// From https://gist.github.com/revolunet/843889.
+    var dict = {};
+    var data = (s + "").split("");
+    var currChar = data[0];
+    var oldPhrase = currChar;
+    var out = [currChar];
+    var code = 256;
+    var phrase;
+    for (var i=1; i<data.length; i++) {
+        var currCode = data[i].charCodeAt(0);
+        if (currCode < 256) {
+            phrase = data[i];
+        }
+        else {
+           phrase = dict[currCode] ? dict[currCode] : (oldPhrase + currChar);
+        }
+        out.push(phrase);
+        currChar = phrase.charAt(0);
+        dict[code] = oldPhrase + currChar;
+        code++;
+        oldPhrase = phrase;
+    }
+    return out.join("");
+}
 
 $(document).ready(function() {
 	// Create a redux store.
@@ -70,7 +143,7 @@ $(document).ready(function() {
 
 	// Define some interface helper functions. //
 	// Define ship creation helper function.
-	var shipNum = 0;
+	var shipNum = 0, shipPositions = {};
 	var createShip = function(length, type){
 		// Create element.
 		++shipNum;
@@ -83,9 +156,22 @@ $(document).ready(function() {
 		var div_width = square_width * length;
 		elem.data("length", length);
 		elem.data("type", type);
+		var pos_array = [
+			null,
+			[0, 0],
+			[2, 3],
+			[4, 2],
+			[6, 3],
+			[8, 7]
+		]
+		var random_pos = $('#grid-' + pos_array[shipNum][0].toString() + "-" + pos_array[shipNum][1].toString()).offset();
 		elem.css({
+			position: "absolute",
+			top: random_pos.top.toString() + "px",
+			left: random_pos.left.toString() + "px",
 			height: div_height.toString() + "px",
 			width: div_width.toString() + "px",
+			"z-index": shipNum // to prevent ships from pushing each other around
 		})
 		$("#game-grid-container").append(elem);
 		var top_left = $('.grid-top-left').position();
@@ -97,21 +183,43 @@ $(document).ready(function() {
 			var updateCovered = function() {
 				// Generate ship class.
 				var jEl = $(el);
-				var ship_class = "ship-class-" + jEl.data("type");
+				var ship_type = jEl.data("type");
+				var ship_class = "ship-class-" + ship_type;
+				var general_ship_conflict_class = "ship-conflict-general";
+				var ship_conflict_class = "ship-conflict-class-" + ship_type;
 
 				// Remove previous hover effects.
-				$('.ship-drag-hover.' + ship_class).removeClass('ship-drag-hover').removeClass(ship_class);
-				$('.ship-drag-hover-invalid.' + ship_class).removeClass('ship-drag-hover-invalid').removeClass(ship_class);
+				$('.ship-occupying.' + ship_class + ":not(." + general_ship_conflict_class + ")")
+					.removeClass('ship-drag-hover')
+					.removeClass('ship-drag-hover-invalid')
+					.removeClass("ship-occupying")
+					.removeClass(ship_class)
+				;
+				$('.' + ship_conflict_class)
+					.addClass("ship-drag-hover")
+					.removeClass("ship-drag-hover-invalid")
+					.removeClass(ship_conflict_class)
+					.removeClass(general_ship_conflict_class)
+				; // reset conflicts
 
 				// Generate list of grid squares covered and applicable effects.
 				var grid_covered = gridIndexForElem(el);
+				shipPositions[ship_type] = grid_covered;
 				var class_adding = (grid_covered.length == jEl.data("length") ? "ship-drag-hover" : "ship-drag-hover-invalid");
 				//console.log(grid_covered);
 				for(var i = 0; i < grid_covered.length; i++){
 					var on = grid_covered[i];
 					var elem_id = "grid-" + on[0].toString() + "-" + on[1].toString();
 					var grid_elem = $('#' + elem_id);
-					grid_elem.addClass(class_adding).addClass(ship_class);
+					if(grid_elem.hasClass("ship-occupying")){
+						grid_elem
+							.removeClass("ship-drag-hover")
+							.addClass("ship-drag-hover-invalid")
+							.addClass(ship_conflict_class)
+							.addClass(general_ship_conflict_class);
+					} else {
+						grid_elem.addClass(class_adding).addClass(ship_class).addClass("ship-occupying");
+					}
 				}
 
 				// Make ship visible if not covering anything yet.
@@ -150,6 +258,7 @@ $(document).ready(function() {
 					// Update element position.
 					x += event.dx;
 					y += event.dy;
+					console.log(x, y);
 
 					// Update element transform style.
 					event.target.style.webkitTransform = event.target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
@@ -180,13 +289,176 @@ $(document).ready(function() {
 		["Submarine", 3],
 		["Destroyer", 2]
 	];
+	var generateHitString = function(smap){
+		return lzw_encode(JSON.stringify(smap));
+	}
 	var startInterfaceSetup = function(){
+		// Mark setup as in progress.
+		setup_complete = false;
+		$('.grid-square').each(function() {
+			$(this).addClass("waiting-for-setup");
+		});
+
 		// Create necessary ships.
 		for(var i = 0; i < all_ships.length; i++){
 			// Create the ship.
 			var on = all_ships[i];
-			createShip(on[1], on[1]);
+			createShip(on[1], on[0]);
 		}
+
+		// Display instructions.
+		$('#dialogModal').find('.dialog-modal-header').text("Set Up Instructions");
+		$('#dialogModal').find('.dialog-modal-subheader').text("Drag ships where desired and click 'Finish setup' when done. Click once on a ship to rotate it.");
+		$('#dialogModal').fadeIn();
+
+		// Configure button for finishing setup. //
+		var lengthForShipType = {};
+		all_ships.map(function(val) {
+			lengthForShipType[val[0].toLowerCase()] = val[1];
+		});
+		$('.finish-setup-button').off("click"); // unbind any previous handlers
+		$('.finish-setup-button').click(function() {
+			// Validate ship positions.
+			var passed = true;
+			var already_seen = [];
+			for(var type in shipPositions){
+				var on = shipPositions[type];
+				var len = lengthForShipType[type.toLowerCase()];
+				if(on.length != len){
+					passed = false;
+					break;
+				}
+				on.map(function(arr){
+					// [row, col]
+					var pos_str = arr[0].toString() + "-" + arr[1].toString();
+					if(already_seen.indexOf(pos_str) !== -1){
+						passed = false;
+					}
+					already_seen.push(pos_str);
+				});
+				if(!passed) break;
+			}
+
+			// Handle error, if applicable.
+			if(!passed){
+				$('#dialogModal').find('.dialog-modal-header').text("Invalid Ship Positions");
+				$('#dialogModal').find('.dialog-modal-subheader').text("One or more of your ships are either out of bounds or intersecting each other. Problematic areas should be highlighted in red.");
+				$('#dialogModal').fadeIn();
+				return;
+			}
+
+			// Hide this button.
+			$('.finish-setup-button').fadeOut();
+
+			// Display loading screen while updating database and waiting for
+			// opponent.
+			$('#progressModal').find('.progress-modal-header').text("Waiting for opponent...")
+			$('#progressModal').find('.progress-modal-code').hide();
+			$('#progressModal').find('.progress-modal-subheader').hide();
+			$('#progressModal').fadeIn();
+
+			// Save hit string and update user state.
+			var updates = {};
+			var cur_state = store.getState();
+			var are_we_client = cur_state.game_state.client;
+			var user_num = (are_we_client ? "1" : "0");
+			var user_int = parseInt(user_num);
+			var hit_str = generateHitString(shipPositions);
+			updates['board_state/0/1/' + user_num] = "no_hit_str"; // keep hit string private for security purposes
+			updates['user_states/' + user_num] = "SETUP_COMPLETE";
+			updates['broadcast_action'] = "setup_ended_" + (are_we_client ? "client" : "host");
+			gameRef.update(updates);
+
+			// Proceed with game.
+			// TODO: Show loading (e.g. wait for ACK), network, etc.
+			// ...
+		});
+		$('.finish-setup-button').fadeIn();
+	}
+	var startGame = function(){
+		// Hide other modals.
+		$('#progressModal').fadeOut();
+		$('.draggable-ship').fadeOut();
+		$('.ship-occupying').removeClassPrefix("ship-");
+
+		// Initialize interface.
+		setup_complete = true;
+		$('.grid-square').each(function() {
+			$(this).removeClass("waiting-for-setup");
+		});
+
+		// Wait for opponent if we are client.
+		var cur_state = store.getState().game_state;
+		var are_we_client = cur_state.client;
+		if(are_we_client){
+			// Wait for opponent to reply with hit test.
+			$('#progressModal').find('.progress-modal-header').text("Waiting for opponent's attack...")
+			$('#progressModal').find('.progress-modal-code').hide();
+			$('#progressModal').find('.progress-modal-subheader').hide();
+			$('#progressModal').fadeIn();
+		}
+
+		// Set up fire button.
+		$('.end-turn-button').click(function() {
+			// Get current game state and mode.
+			var cur_state = store.getState().game_state;
+			var mode = cur_state.mode;
+
+			// Verify number of missiles fired as legal based on game mode.
+			var fired = $('.grid-missile-fired');
+			var missiles_fired = fired.length;
+			var error = undefined;
+			if(missiles_fired === 0){
+				error = "Must fire at least one missile per turn.";
+			} else if(mode === "regular" && missiles_fired !== 1){
+				error = "Can only fire one missile per turn in classic Battleship.";
+			}
+			// TODO: Salvo support
+
+			// Handle error, if applicable.
+			if(error !== undefined){
+				$('#dialogModal').find('.dialog-modal-header').text("Illegal Firing Pattern");
+				$('#dialogModal').find('.dialog-modal-subheader').text(error);
+				$('#dialogModal').fadeIn();
+				return;
+			}
+
+			// Hide self.
+			$(this).fadeOut();
+
+			// Accumulate fired points.
+			var points = [];
+			fired.each(function() {
+				points.push([parseInt($(this).data("row")), parseInt($(this).data("col"))]);
+			})
+
+			// Send database update.
+			var newHistRef = gameRef.child("board_state/1/1").push();
+			newHistRef.set([
+				(are_we_client ? "client" : "host"),
+				points
+			]);
+			var updates = {};
+			updates['turn_end_key'] = [Date.now().toString(), (are_we_client ? "client" : "host"), "done_firing"];
+			gameRef.update(updates);
+
+			// Wait for opponent to reply with hit test.
+			$('#progressModal').find('.progress-modal-header').text("Waiting for result...")
+			$('#progressModal').find('.progress-modal-code').hide();
+			$('#progressModal').find('.progress-modal-subheader').hide();
+			$('#progressModal').fadeIn();
+
+			// TODO: Network, etc.
+		});
+		if(!are_we_client){
+			$('.end-turn-button').fadeIn();
+		}
+
+		// Display instructions.
+		// TODO: Vary instructions by mode
+		$('#dialogModal').find('.dialog-modal-header').text("Gameplay Instructions");
+		$('#dialogModal').find('.dialog-modal-subheader').text("Click once on a square to mark it as a guess, and again to clear it. Once you have made your decision, click 'Fire' to dispatch your missiles.");
+		$('#dialogModal').fadeIn();
 	}
 
 	// Define main game event handler.
@@ -194,18 +466,26 @@ $(document).ready(function() {
 	var masterGameHandler = function(changed_data){
 		// Check if the event is interesting (e.g. worth a database fetch).
 		var key = changed_data.getKey();
-		console.log(key);
 		if(interesting_keys.indexOf(key) === -1) return;
+		console.log(key);
 
 		// Handle special keys.
+		var setup_check = false;
 		if(key === "broadcast_action"){
 			var action = changed_data.val();
 			if(action === "setup"){
 				// Start interface setup.
 				startInterfaceSetup();
 
-				// ...
-				return;
+				// Allow current game state to be saved. -
+			} else if(action.indexOf("setup_ended") === 0){
+				// SETUP_COMPLETE state will be stored in redux for
+				// the appropriate user.
+				setup_check = true;
+				console.log(changed_data);
+				console.log("Game state", store.getState().game_state);
+
+				// Allow current game state to be saved. -
 			}
 		}
 
@@ -234,8 +514,34 @@ $(document).ready(function() {
 			// Send new state to store.
 			store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
 
+			// Perform a setup check if needed.
+			if(setup_check){
+				if(data.user_states[0] === data.user_states[1] && data.user_states[1] === "SETUP_COMPLETE"){
+					// Start game.
+					setTimeout(function() {
+						startGame();
+					}, 150);
+				}
+			}
+
+			// Handle turn types.
+			if(key === "turn_end_key"){
+				var turn_data = changed_data.val();
+				var whose_turn = turn_data[1], turn_type = turn_data[2];
+				var our_turn = (are_we_client ? "client" : "host");
+				if(whose_turn !== our_turn){ // don't respond to our own events
+					if(turn_type === "done_firing"){
+						// Retrieve the squares they fired on.
+						var fired_squares = data.board_state[1][1][-1];
+						console.log("Other played fired", fired_squares);
+
+						// TODO: Check how many hit, reply, do ACK ping-pong,
+						// firing animation, etc.
+					}
+				}
+			}
+
 			// Handle data changes and update interface accordingly.
-			// TODO: Start setup, etc.
 			// TODO: Update board state, deal with synchronization, etc.
 			// ...
 		});
@@ -302,14 +608,6 @@ $(document).ready(function() {
 				<p class="media-text"></p> \
 			</div> \
 		</div>'));
-		/*
-		<div class="media">
-		<div class="media-body">
-			<h4 class="media-heading">Media heading</h4>
-		</div>
-		<div class="media-right"></div>
-		</div>
-		*/
 	}
 	$('.user-info-box').find('.media-text').text("Client/host");
 	$('.user-info-box').hide();
@@ -365,6 +663,8 @@ $(document).ready(function() {
 		for(var j = 0; j < 10; j++){
 			var elem_id = "grid-" + i.toString() + "-" + j.toString();
 			var elem = $('<div id="' + elem_id + '" class="col-md-1 col-xs-1 grid-square">' + svg_missile_hover + svg_missile_fired + '</div>');
+			elem.data("row", i);
+			elem.data("col", j);
 			if(j == 0) elem.addClass("grid-first-col");
 			else if(j == 9) elem.addClass("grid-last-col");
 			if(i == 0){
@@ -387,6 +687,7 @@ $(document).ready(function() {
 	game_container.appendTo($('#game_area'));
 
 	// Install hover handlers for grid squares.
+	/*
 	$('.grid-square').hover(function() {
 		if(!setup_complete) return;
 		if($(this).hasClass("grid-missile-fired")) return;
@@ -394,6 +695,7 @@ $(document).ready(function() {
 	}, function() {
 		$(this).find(".missile_hover").hide();
 	});
+	*/
 
 	// Disable hover effects until game is setup.
 	$('.grid-square').each(function() {
@@ -403,9 +705,10 @@ $(document).ready(function() {
 	// Install click handler for grid squares.
 	$('.grid-square').click(function() {
 		if(!setup_complete) return;
+
+		// Add or remove mark on first / second click.
 		$(this).find(".missile_hover").hide();
-		$(this).find(".missile_fired").show();
-		$(this).addClass("grid-missile-fired");
+		$(this).toggleClass("grid-missile-fired");
 
 		// TODO: Network, etc.
 	});
@@ -692,7 +995,8 @@ $(document).ready(function() {
 									updates["started"] = 3;
 									updates["user_states/1"] = "DOING_SETUP";
 									updates["board_state"] = [
-										["ht", ["", ""]] // for hit testing
+										["ht", ["", ""]], // for hit testing
+										["his", [[0]]] // for history
 									];
 									updates["broadcast_action"] = "setup";
 									gameRef.update(updates);
@@ -819,12 +1123,17 @@ $(document).ready(function() {
 		$('[data-toggle="tooltip"]').tooltip()
 	});
 
-	// //
+	// Set up dialog modal. //
+	$('#dialogModal').find('.btn').click(function() {
+		$('#dialogModal').fadeOut();
+	});
+
+	/* //
 	setTimeout(function() {
 		$('.game-modal').fadeOut();
-		startInterfaceSetup();
+		startGame();
 	}, 500);
-	// //
+	// */
 });
 
 $(window).on("resize", function() {

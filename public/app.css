@@ -12,6 +12,11 @@ h1, h3 {
 
 /* Grid styling */
 
+@keyframes square_transition {
+    from {background-color: #13242b;}
+    to {background-color: #ff3939;}
+}
+
 .grid-square {
 	position: relative;
 	display: block;
@@ -22,12 +27,24 @@ h1, h3 {
 	border: 2px solid #337ab7;
 	border-bottom: none;
 	border-left: none;
+	animation: square_transition 1s ease-in-out infinite alternate;
+	animation-play-state: paused;
 }
 
+.grid-missile-fired {
+	animation-play-state: running;
+}
+
+/*
 .grid-square:not(.grid-missile-fired):not(.waiting-for-setup):hover {
 	background-color: #cff8fa;
 	padding-top: 0px;
 	padding-bottom: 12px;
+}
+*/
+.grid-square:not(.grid-missile-fired):not(.waiting-for-setup):hover {
+	background-color: #cff8fa;
+	animation: none;
 }
 
 .grid-top-left {
@@ -131,8 +148,11 @@ h1, h3 {
 /* Grid square styling */
 
 .missile_hover {
-	width: 100%;
+	max-width: 100%;
+	max-height: 100%;
 	height: 100%;
+	width: 100%;
+	object-fit: contain;
 	fill: #d03737;
 }
 
@@ -144,11 +164,13 @@ h1, h3 {
 	fill: #d03737;
 }
 
+/*
 .grid-missile-fired {
 	padding-top: 0px;
 	padding-bottom: 0px;
 	padding: 0px;
 }
+*/
 
 /* Modal styling */
 
@@ -185,9 +207,22 @@ h1, h3 {
 }
 
 .fixed-modal {
-	postion: fixed;
-	bottom: 0;
+	position: fixed;
+	/*top: 40%;*/
+	/*left: 40%;*/
+	margin-left: auto;
+	margin-right: auto;
+	top: 40%;
+	left: 0;
 	right: 0;
+	width: 15%;
+	min-width: 350px;
+	z-index: 10001;
+	-webkit-box-shadow: 14px 10px 155px 24px rgba(0,0,0,0.79);
+	-moz-box-shadow: 14px 10px 155px 24px rgba(0,0,0,0.79);
+	box-shadow: 14px 10px 155px 24px rgba(0,0,0,0.79);
+	border-radius: 5px;
+	background: rgba(10, 10, 10, 1.0);
 }
 
 /* Account or user area styling */
@@ -248,11 +283,26 @@ h1, h3 {
 }
 
 .ship-drag-hover {
+	animation: none;
 	background-color: orange;
 }
 
 .ship-drag-hover-invalid {
+	animation: none;
 	background-color: red;
+}
+
+/* Fixed button styling */
+.finish-setup-button {
+	position: fixed;
+	bottom: 0px;
+	right: 0px;
+}
+
+.end-turn-button {
+	position: fixed;
+	bottom: 0px;
+	right: 0px;
 }
 
 /* Color definition(s) */
