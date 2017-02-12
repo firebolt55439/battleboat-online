@@ -44,7 +44,7 @@
 </head>
 <body>
 	<div id="header" class="text-center">
-		<h1>Battleboat Online<div id="radar"></div></h1>
+		<img class="radar-img hidden" src="assets/img/Radar2.gif"></img>&nbsp;<h1>Battleboat Online</h1>&nbsp;<img class="radar-img hidden" src="assets/img/Radar2.gif"></img>
 		<h4 id="versusText">vs.</h4>
 	</div>
 	<div id="user_area1" class="user-area user-area-left"></div>
@@ -58,6 +58,10 @@
 	</div>
 	<div class="game-modal game-modal-wider" id="newGameModal" style="display:none;"></div>
 	<div class="game-modal" id="signInModal" style="display:none;"></div>
+	<div class="game-modal text-center game-modal-wider game-modal-longer" id="warningModal" style="display:none; z-index: 10002;">
+		<h3 class="warning-modal-header cyan-blue">Warning</h3>
+		<h4 class="warning-modal-subheader">Content</h4>
+	</div>
 	<div class="game-modal game-modal-wider game-modal-longer text-center" id="progressModal" style="display: none;">
 		<h3 class="progress-modal-header cyan-blue">Searching for Opponent...</h3>
 		<h4 class="progress-modal-subheader">Game ID:</h4><code class="progress-modal-code"></code><br /><br />

@@ -103,7 +103,9 @@ h1, h3 {
 
 .status-row {
 	margin-top: 15px;
-	padding-left: 15px;
+	padding-left: 10px;
+	padding-right: 5px;
+	line-height: 1.2em;
 	font-size: 1em;
 	color: #cff8fa;
 	border-bottom: 1px solid #337ab7;
@@ -182,6 +184,12 @@ h1, h3 {
 	padding-bottom: 50px;
 }
 
+.fixed-modal {
+	postion: fixed;
+	bottom: 0;
+	right: 0;
+}
+
 /* Account or user area styling */
 
 .image-resize-to-fit {
@@ -214,6 +222,37 @@ h1, h3 {
 /* Versus text styling */
 #versusText {
 	color: #ff5e00;
+}
+
+/* Header styling */
+#header h1 {
+	clear: both;
+	display: inline-block;
+	top: 18px;
+}
+.radar-img {
+	position: relative;
+	top: -10px;
+	display: inline-block;
+	max-width: 100%;
+	max-height: 100%;
+	width: 65px;
+}
+
+/* Ship styling */
+.draggable-ship {
+	/*z-index: 1001;*/
+	border-radius: 20px;
+	background-color: red;
+	opacity: 0.05;
+}
+
+.ship-drag-hover {
+	background-color: orange;
+}
+
+.ship-drag-hover-invalid {
+	background-color: red;
 }
 
 /* Color definition(s) */

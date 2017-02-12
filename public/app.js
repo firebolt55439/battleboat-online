@@ -18,12 +18,196 @@ $(document).ready(function() {
 	}
 	var store = Redux.createStore(store_handler);
 
+	// Generate helper function for hit-testing grid squares. //
+	var gridIndexForElem = undefined;
+	setTimeout(function() {
+		var top_left = $('.grid-first-col.grid-first-row').offset();
+		top_left = [top_left.left, top_left.top]; // [x, y]
+		console.log(top_left);
+		var square_height = $('.grid-first-col')[0].offsetHeight;
+		var square_width = $('.grid-first-col')[0].offsetWidth;
+		function getCoords(elem) { // crossbrowser version
+			// From http://stackoverflow.com/questions/5598743/finding-elements-position-relative-to-the-document
+		    var box = elem.getBoundingClientRect();
+
+		    var body = document.body;
+		    var docEl = document.documentElement;
+
+		    var scrollTop = window.pageYOffset || docEl.scrollTop || body.scrollTop;
+		    var scrollLeft = window.pageXOffset || docEl.scrollLeft || body.scrollLeft;
+
+		    var clientTop = docEl.clientTop || body.clientTop || 0;
+		    var clientLeft = docEl.clientLeft || body.clientLeft || 0;
+
+		    var top  = box.top +  scrollTop - clientTop;
+		    var left = box.left + scrollLeft - clientLeft;
+
+		    return { top: Math.round(top), left: Math.round(left) };
+		}
+		gridIndexForElem = function(el){
+			// [top, right, bottom, left, width, height]
+			var rect = el.getBoundingClientRect(), coords = getCoords(el);
+			//console.log(rect, coords);
+			var x = coords.left, y = coords.top;
+			var width = rect.width, height = rect.height;
+			var dx = x - top_left[0], dy = y - top_left[1];
+			//console.log(x, y, square_width, square_height);
+			var col = Math.round(dx / square_width);
+			var row = Math.round(dy / square_height);
+			var spreadX = Math.round(width / square_width);
+			var spreadY = Math.round(height / square_height);
+			var res = [];
+			for(var i = 0; i < spreadX; i++){
+				for(var j = 0; j < spreadY; j++){
+					var r = row + j, c = col + i;
+					if(r < 0 || r > 9 || c < 0 || c > 9) continue;
+					res.push([r, c]);
+				}
+			}
+			return res;
+		};
+	}, 150);
+
+	// Define some interface helper functions. //
+	// Define ship creation helper function.
+	var shipNum = 0;
+	var createShip = function(length, type){
+		// Create element.
+		++shipNum;
+		var top_left = $('.grid-first-col.grid-first-row').offset();
+		top_left = [top_left.left, top_left.top]; // [x, y]
+		var elem = $('<div class="draggable-ship" id="shipnum' + shipNum.toString() + '"></div>');
+		var square_height = $('.grid-first-col')[0].offsetHeight;
+		var div_height = square_height;
+		var square_width = $('.grid-first-col')[0].offsetWidth;
+		var div_width = square_width * length;
+		elem.data("length", length);
+		elem.data("type", type);
+		elem.css({
+			height: div_height.toString() + "px",
+			width: div_width.toString() + "px",
+		})
+		$("#game-grid-container").append(elem);
+		var top_left = $('.grid-top-left').position();
+
+		// Set up interact.js to allow dragging and snapping to corners.
+		(function() {
+			var el = document.getElementById('shipnum' + shipNum.toString());
+			var x = 0, y = 0;
+			var updateCovered = function() {
+				// Generate ship class.
+				var jEl = $(el);
+				var ship_class = "ship-class-" + jEl.data("type");
+
+				// Remove previous hover effects.
+				$('.ship-drag-hover.' + ship_class).removeClass('ship-drag-hover').removeClass(ship_class);
+				$('.ship-drag-hover-invalid.' + ship_class).removeClass('ship-drag-hover-invalid').removeClass(ship_class);
+
+				// Generate list of grid squares covered and applicable effects.
+				var grid_covered = gridIndexForElem(el);
+				var class_adding = (grid_covered.length == jEl.data("length") ? "ship-drag-hover" : "ship-drag-hover-invalid");
+				//console.log(grid_covered);
+				for(var i = 0; i < grid_covered.length; i++){
+					var on = grid_covered[i];
+					var elem_id = "grid-" + on[0].toString() + "-" + on[1].toString();
+					var grid_elem = $('#' + elem_id);
+					grid_elem.addClass(class_adding).addClass(ship_class);
+				}
+
+				// Make ship visible if not covering anything yet.
+				if(grid_covered.length == 0){
+					jEl.animate({
+						opacity: 1.0
+					}, 2500);
+				} else {
+					jEl.stop(true, true);
+					jEl.css("opacity", 0.05);
+				}
+			}
+			interact(el)
+				.draggable({
+					snap: {
+						targets: [
+							interact.createSnapGrid({
+								x: square_width,
+								y: square_height,
+								offset: {
+									x: top_left.left,
+									y: top_left.top
+								}
+							})
+						],
+						range: Infinity,
+						relativePoints: [ { x: 0, y: 0 } ]
+					},
+					inertia: false,
+					restrict: {
+						restriction: "parent",
+						elementRect: { top: 0, left: 0, bottom: 1, right: 1 }
+				    }
+				})
+				.on('dragmove', function (event) {
+					// Update element position.
+					x += event.dx;
+					y += event.dy;
+
+					// Update element transform style.
+					event.target.style.webkitTransform = event.target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+
+					// Update covered squares.
+					updateCovered();
+				})
+				.on("tap", function(event) {
+					// Swap width and height;
+					var origHeight = event.target.style.height;
+					var origWidth = event.target.style.width;
+					event.target.style.height = origWidth;
+					event.target.style.width = origHeight;
+
+					// Update covered squares.
+					updateCovered();
+				});
+
+			// Initial covered update.
+			updateCovered();
+		})();
+	}
+	// Define ship setup helper function.
+	var all_ships = [
+		["Carrier", 5],
+		["Battleship", 4],
+		["Cruiser", 3],
+		["Submarine", 3],
+		["Destroyer", 2]
+	];
+	var startInterfaceSetup = function(){
+		// Create necessary ships.
+		for(var i = 0; i < all_ships.length; i++){
+			// Create the ship.
+			var on = all_ships[i];
+			createShip(on[1], on[1]);
+		}
+	}
+
 	// Define main game event handler.
+	var interesting_keys = ["turn_end_key", "broadcast_action"];
 	var masterGameHandler = function(changed_data){
 		// Check if the event is interesting (e.g. worth a database fetch).
 		var key = changed_data.getKey();
 		console.log(key);
-		if(key !== "turn_end_key") return;
+		if(interesting_keys.indexOf(key) === -1) return;
+
+		// Handle special keys.
+		if(key === "broadcast_action"){
+			var action = changed_data.val();
+			if(action === "setup"){
+				// Start interface setup.
+				startInterfaceSetup();
+
+				// ...
+				return;
+			}
+		}
 
 		// Grab current game state from database.
 		gameRef.once("value", function(data) {
@@ -153,13 +337,13 @@ $(document).ready(function() {
 		$('.user-area-left').find('.media-object').attr('src', us[2]);
 
 		// Display interface changes.
-		$('#versusText').fadeIn();
+		//$('#versusText').fadeIn();
 		$('.user-info-box').fadeIn();
 	}
 
 	// Set up the 10x10 game grid. //
 	// Set up the container.
-	var game_container = $('<div class="fluid-container grid-container"></div>');
+	var game_container = $('<div class="fluid-container grid-container" id="game-grid-container"></div>');
 
 	// Set up the header.
 	var header = $('<div class="row grid-header"></div>');
@@ -179,7 +363,8 @@ $(document).ready(function() {
 		var row_letter = String.fromCharCode(65 + i);
 		row.append($('<div class="col-md-1 col-xs-1 grid-label"><h2>' + row_letter + '</h2></div>'));
 		for(var j = 0; j < 10; j++){
-			var elem = $('<div class="col-md-1 col-xs-1 grid-square">' + svg_missile_hover + svg_missile_fired + '</div>');
+			var elem_id = "grid-" + i.toString() + "-" + j.toString();
+			var elem = $('<div id="' + elem_id + '" class="col-md-1 col-xs-1 grid-square">' + svg_missile_hover + svg_missile_fired + '</div>');
 			if(j == 0) elem.addClass("grid-first-col");
 			else if(j == 9) elem.addClass("grid-last-col");
 			if(i == 0){
@@ -335,13 +520,12 @@ $(document).ready(function() {
 					var updates = {};
 					updates['started'] = 2;
 					gameRef.update(updates);
-
-					// ...
 				} else if(data.started == 3 && hasStarted == 1){
 					hasStarted = 2;
 
 					// Update interface as necessary.
 					$('#progressModal').fadeOut();
+					$('.radar-img').removeClass("hidden");
 					addStatusEntry("Found an opponent!");
 
 					// Detach this callback and defer to main callback.
@@ -494,6 +678,7 @@ $(document).ready(function() {
 
 									// Update interface as necessary.
 									$('#progressModal').fadeOut();
+									$('.radar-img').removeClass("hidden");
 									addStatusEntry("Found an opponent!");
 
 									// Detach this callback and defer to main callback.
@@ -506,6 +691,10 @@ $(document).ready(function() {
 									var updates = {};
 									updates["started"] = 3;
 									updates["user_states/1"] = "DOING_SETUP";
+									updates["board_state"] = [
+										["ht", ["", ""]] // for hit testing
+									];
+									updates["broadcast_action"] = "setup";
 									gameRef.update(updates);
 								}
 								store.dispatch({type: "UPDATE_GAME_STATE", data: new_state});
@@ -625,15 +814,25 @@ $(document).ready(function() {
         }
     });
 
-	// Set up radar. //
-	
-
 	// Initialize tooltips. //
 	$(function () {
 		$('[data-toggle="tooltip"]').tooltip()
 	});
+
+	// //
+	setTimeout(function() {
+		$('.game-modal').fadeOut();
+		startInterfaceSetup();
+	}, 500);
+	// //
 });
 
+$(window).on("resize", function() {
+	// Display warning.
+	$('#warningModal').find('.warning-modal-header').text("Do not resize");
+	$('#warningModal').find('.warning-modal-subheader').text("Resizing the window after the interface has loaded causes graphics glitches. Please refresh the page.");
+	$('#warningModal').fadeIn();
+});
 
 
 
