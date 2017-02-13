@@ -1,8 +1,5 @@
-// TODO: Salvo and normal variants.
+// TODO: More variants, by game ID, sharing / social integration.
 // TODO: Play AI if no opponent found in n minutes
-// TODO: Turn-based action and animations (when receiving opponent's moves, show
-// nice uppercase typewriter red text saying your/their turn and an animated missile
-// svg animation for what they fire)
 // TODO: Your ships (w/ svg images) on right and n squares side-by-side with filled in
 // with x's or in red if hit with n = ship length and put ship name and label there as well
 // TODO: Ensure reusability of interface for another game
@@ -156,6 +153,7 @@ $(document).ready(function() {
 					res.push([r, c]);
 				}
 			}
+            console.log($(el).data("type"), res);
 			return res;
 		};
 	}, 150);
@@ -199,6 +197,7 @@ $(document).ready(function() {
 		(function() {
 			var el = document.getElementById('shipnum' + shipNum.toString());
 			var x = 0, y = 0;
+            var currently_rotated = false;
 			var updateCovered = function() {
 				// Generate ship class.
 				var jEl = $(el);
@@ -277,7 +276,6 @@ $(document).ready(function() {
 					// Update element position.
 					x += event.dx;
 					y += event.dy;
-					console.log(x, y);
 
 					// Update element transform style.
 					event.target.style.webkitTransform = event.target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
@@ -286,11 +284,21 @@ $(document).ready(function() {
 					updateCovered();
 				})
 				.on("tap", function(event) {
-					// Swap width and height;
+					// Retrieve current dimensions.
 					var origHeight = event.target.style.height;
 					var origWidth = event.target.style.width;
-					event.target.style.height = origWidth;
-					event.target.style.width = origHeight;
+
+                    // Set new dimensions.
+                    if(currently_rotated){
+                        event.target.style.height = div_height.toString() + "px";
+    					event.target.style.width = div_width.toString() + "px";
+                    } else {
+                        event.target.style.height = (square_height * length).toString() + "px";
+    					event.target.style.width = square_width.toString() + "px";
+                    }
+
+                    // Update rotated flag.
+                    currently_rotated = !currently_rotated;
 
 					// Update covered squares.
 					updateCovered();
@@ -435,7 +443,7 @@ $(document).ready(function() {
         for(var i = 0; i < our_fired.length; i++){
             var on = our_fired[i];
             var on_sq = on.square;
-            console.log("History add", on);
+            //console.log("History add", on);
             var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
             $('#' + grid_id).addClass("grid-history-active");
             if(on.ship){
@@ -587,9 +595,15 @@ $(document).ready(function() {
 		}
 
 		// Display instructions.
-		// TODO: Vary instructions by mode
+        var instructions = "(unknown mode)", mode = store.getState().game_state.mode;
+        instructions = "Click once on a square to mark it as a guess, and again to clear it. Once you have made your decision, click 'Fire' to dispatch your missile";
+        if(mode === "regular"){
+            instructions += ". You have one missile per turn in classic mode.";
+        } else if(mode === "salvo"){
+            instructions += "s. You have one missile per surviving ship in salvo mode.";
+        }
 		$('#dialogModal').find('.dialog-modal-header').text("Gameplay Instructions");
-		$('#dialogModal').find('.dialog-modal-subheader').text("Click once on a square to mark it as a guess, and again to clear it. Once you have made your decision, click 'Fire' to dispatch your missiles.");
+		$('#dialogModal').find('.dialog-modal-subheader').text(instructions);
 		$('#dialogModal').fadeIn();
 	}
 
@@ -685,6 +699,8 @@ $(document).ready(function() {
                 $('#gameResultModal').find('.game-result-modal-header').text("You Lose.");
                 $('#gameResultModal').find('.game-result-modal-subheader').text("Your opponent won - their ship arrangement is being displayed. Avenge yourself!");
                 $('#gameResultModal').fadeIn();
+                var name = cur_state.user_info.displayName.split(" ")[0];
+                addStatusEntry("Unfortunately, " + name + ", you lost. Don't let them get the last laugh!");
                 return;
             }
 
@@ -817,6 +833,7 @@ $(document).ready(function() {
                                 else if(successful_hits == 1) message += "1 hit";
                                 else message += successful_hits.toString() + " hits";
                                 message += " out of " + total_hits.toString() + ".";
+                                addStatusEntry(message);
                         		$('#dialogModal').find('.dialog-modal-subheader').text(message);
                         		$('#dialogModal').fadeIn();
 
@@ -884,11 +901,14 @@ $(document).ready(function() {
                             var our_total_successful_hits = uniqueHits.length;
                             var winning_hit_num = all_ships.reduce(function(a, b){
                                 return a + b[1];
-                            });
+                            }, /*initialValue=*/0);
+                            //console.log("Winning hit num", winning_hit_num);
                             if(our_total_successful_hits === winning_hit_num){
                                 $('#gameResultModal').find('.game-result-modal-header').text("You Win!");
                                 $('#gameResultModal').find('.game-result-modal-subheader').text("Congratulations, you won!");
                                 $('#gameResultModal').fadeIn();
+                                var name = cur_state.user_info.displayName.split(" ")[0];
+                                addStatusEntry("Congratulations " + name + ", you won!");
                                 var updates = {};
                                 updates["winner"] = (are_we_client ? "client" : "host")
                                 updates["winning_position"] = cur_state.hit_string;
@@ -904,6 +924,7 @@ $(document).ready(function() {
                             else if(successful_hits == 1) message += "1 hit";
                             else message += successful_hits.toString() + " hits";
                             message += " out of " + total_hits.toString() + ".";
+                            addStatusEntry(message);
                             $('#dialogModal').find('.dialog-modal-subheader').text(message);
                             $('#dialogModal').fadeIn();
 
@@ -927,10 +948,6 @@ $(document).ready(function() {
 					}
 				}
 			}
-
-			// Handle data changes and update interface accordingly.
-			// TODO: Update board state, deal with synchronization, etc.
-			// ...
 		});
 	};
 
@@ -1097,8 +1114,6 @@ $(document).ready(function() {
 		// Add or remove mark on first / second click.
 		$(this).find(".missile_hover").hide();
 		$(this).toggleClass("grid-missile-fired");
-
-		// TODO: Network, etc.
 	});
 
 	// Initialize set up prompt. //
