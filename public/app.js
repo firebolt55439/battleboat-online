@@ -77,17 +77,36 @@ function lzw_decode(s) {
 
 $(document).ready(function() {
 	// Create a redux store.
-	var store_handler = function(state = {}, action){
+    var initialState = {
+        "user_info": {},
+        "game_state": {},
+        "hit_string": "",
+        "their_fired": [],
+        "our_fired": []
+    }
+	var store_handler = function(state = initialState, action){
 		var type = action.type;
-		if(type == "STORE_USER_INFO"){
+		if(type === "STORE_USER_INFO"){
 			var ret = jQuery.extend({}, state);
 			ret["user_info"] = action.data;
 			return ret;
-		} else if(type == "UPDATE_GAME_STATE"){
+		} else if(type === "UPDATE_GAME_STATE"){
 			var ret = jQuery.extend({}, state);
 			ret["game_state"] = action.data;
 			return ret;
-		}
+		} else if(type === "SET_HIT_STRING"){
+			var ret = jQuery.extend({}, state);
+			ret["hit_string"] = action.data;
+			return ret;
+		} else if(type === "UPDATE_THEIR_FIRED_SQUARES"){
+            var ret = jQuery.extend({}, state);
+            Array.prototype.push.apply(ret["their_fired"], action.data);
+			return ret;
+        } else if(type === "UPDATE_OUR_FIRED_SQUARES"){
+            var ret = jQuery.extend({}, state);
+            Array.prototype.push.apply(ret["our_fired"], action.data);
+			return ret;
+        }
 	}
 	var store = Redux.createStore(store_handler);
 
@@ -292,6 +311,9 @@ $(document).ready(function() {
 	var generateHitString = function(smap){
 		return lzw_encode(JSON.stringify(smap));
 	}
+	var parseHitString = function(hit_str){
+		return JSON.parse(lzw_decode(hit_str));
+	}
 	var startInterfaceSetup = function(){
 		// Mark setup as in progress.
 		setup_complete = false;
@@ -369,23 +391,60 @@ $(document).ready(function() {
 			updates['broadcast_action'] = "setup_ended_" + (are_we_client ? "client" : "host");
 			gameRef.update(updates);
 
-			// Proceed with game.
-			// TODO: Show loading (e.g. wait for ACK), network, etc.
-			// ...
+			// Store hit string in private store.
+			store.dispatch({ type: "SET_HIT_STRING", data: hit_str })
 		});
 		$('.finish-setup-button').fadeIn();
 	}
+    var startTurnPrompt = function() {
+        $('#dialogModal').find('.dialog-modal-header').text("Your Turn");
+        $('#dialogModal').find('.dialog-modal-subheader').text("It is now your turn to fire at your opponent. Choose wisely!");
+        $('#dialogModal').fadeIn();
+    }
+    var enableGridHover = function() {
+        // Enable hover and click effects.
+        setup_complete = true;
+        $('.grid-square').each(function() {
+			$(this).removeClass("waiting-for-setup");
+		});
+
+        // Fill in board for our hits and misses.
+        var cur_state = store.getState();
+        var our_fired = cur_state.our_fired;
+        console.log("Our fired", our_fired);
+        for(var i = 0; i < our_fired.length; i++){
+            var on = our_fired[i];
+            var on_sq = on.square;
+            console.log("History add", on);
+            var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+            $('#' + grid_id).addClass("grid-history-active");
+            if(on.hit){
+                $('#' + grid_id).addClass("grid-history-hit");
+            } else {
+                $('#' + grid_id).addClass("grid-history-miss");
+            }
+        }
+    }
+    var disableGridHover = function() {
+        setup_complete = false;
+        $('.grid-missile-fired').each(function() {
+            var that = $(this);
+            that.removeClass("grid-missile-fired");
+            that.css("animation", "none");
+            setTimeout(function() {
+                that.css("animation", "");
+            }, 150);
+        });
+        $('.grid-history-active').removeClassPrefix("grid-history");
+        $('.grid-square').each(function() {
+			$(this).addClass("waiting-for-setup");
+		});
+    }
 	var startGame = function(){
 		// Hide other modals.
 		$('#progressModal').fadeOut();
 		$('.draggable-ship').fadeOut();
 		$('.ship-occupying').removeClassPrefix("ship-");
-
-		// Initialize interface.
-		setup_complete = true;
-		$('.grid-square').each(function() {
-			$(this).removeClass("waiting-for-setup");
-		});
 
 		// Wait for opponent if we are client.
 		var cur_state = store.getState().game_state;
@@ -396,7 +455,13 @@ $(document).ready(function() {
 			$('#progressModal').find('.progress-modal-code').hide();
 			$('#progressModal').find('.progress-modal-subheader').hide();
 			$('#progressModal').fadeIn();
-		}
+
+            // Initialize interface.
+            disableGridHover();
+		} else {
+            // Initialize interface.
+            enableGridHover();
+        }
 
 		// Set up fire button.
 		$('.end-turn-button').click(function() {
@@ -423,7 +488,8 @@ $(document).ready(function() {
 				return;
 			}
 
-			// Hide self.
+			// Update interface.
+            disableGridHover();
 			$(this).fadeOut();
 
 			// Accumulate fired points.
@@ -439,7 +505,11 @@ $(document).ready(function() {
 				points
 			]);
 			var updates = {};
-			updates['turn_end_key'] = [Date.now().toString(), (are_we_client ? "client" : "host"), "done_firing"];
+			updates['turn_end_key'] = [
+				newHistRef.key,
+				(are_we_client ? "client" : "host"),
+				"done_firing"
+			];
 			gameRef.update(updates);
 
 			// Wait for opponent to reply with hit test.
@@ -447,8 +517,6 @@ $(document).ready(function() {
 			$('#progressModal').find('.progress-modal-code').hide();
 			$('#progressModal').find('.progress-modal-subheader').hide();
 			$('#progressModal').fadeIn();
-
-			// TODO: Network, etc.
 		});
 		if(!are_we_client){
 			$('.end-turn-button').fadeIn();
@@ -486,7 +554,18 @@ $(document).ready(function() {
 				console.log("Game state", store.getState().game_state);
 
 				// Allow current game state to be saved. -
-			}
+			} else if(action.indexOf("game_over") === 0){
+                var cur_state = store.getState();
+    			var are_we_client = cur_state.game_state.client;
+                var winner = action.split("|")[1];
+                var us_str = (are_we_client ? "client" : "host");
+                if(winner !== us_str){
+                    $('#gameResultModal').find('.game-result-modal-header').text("You Lose.");
+                    $('#gameResultModal').find('.game-result-modal-subheader').text("Your opponent won. Avenge yourself!");
+                    $('#gameResultModal').fadeIn();
+                    return;
+                }
+            }
 		}
 
 		// Grab current game state from database.
@@ -527,16 +606,234 @@ $(document).ready(function() {
 			// Handle turn types.
 			if(key === "turn_end_key"){
 				var turn_data = changed_data.val();
+				var turn_key = turn_data[0];
 				var whose_turn = turn_data[1], turn_type = turn_data[2];
 				var our_turn = (are_we_client ? "client" : "host");
 				if(whose_turn !== our_turn){ // don't respond to our own events
 					if(turn_type === "done_firing"){
+                        // Dismiss dialog modal if not a turn prompt.
+                        if($('#dialogModal').find('.dialog-modal-header').text() !== "Your Turn"){
+                            $('#dialogModal').find('.btn').click();
+                        }
+
+						// Retrieve our current hit state.
+						var hit_map = parseHitString(cur_state.hit_string);
+
 						// Retrieve the squares they fired on.
-						var fired_squares = data.board_state[1][1][-1];
+						var fired_squares = data.board_state[1][1][turn_key][1];
 						console.log("Other played fired", fired_squares);
 
-						// TODO: Check how many hit, reply, do ACK ping-pong,
-						// firing animation, etc.
+						// Count how many squares were hit, and belonging to
+						// which ship.
+						var hitMissShip = [];
+						for(var i = 0; i < fired_squares.length; i++){
+							var on = JSON.stringify(fired_squares[i]);
+							var ship_hit = undefined, square_hit = false;
+							for(var ship_name in hit_map){
+								var hit = (hit_map[ship_name].map(function(val) {
+									return JSON.stringify(val);
+								}).indexOf(on)) !== -1;
+								if(hit){
+									ship_hit = ship_name;
+									square_hit = true;
+									break;
+								}
+							}
+                            var pushing = {
+								square: fired_squares[i],
+								hit: square_hit
+							};
+                            if(square_hit){
+                                pushing["ship"] = ship_hit;
+                            }
+							hitMissShip.push(pushing);
+						}
+
+                        // Save fired squares to private store.
+                        store.dispatch({ type: "UPDATE_THEIR_FIRED_SQUARES", data: hitMissShip });
+
+						// Transmit which squares were hit.
+						var newHistRef = gameRef.child("board_state/1/1").push();
+						newHistRef.set([
+							(+ are_we_client), // cast bool to int
+							hitMissShip
+						]);
+						var updates = {};
+						updates['turn_end_key'] = [
+							newHistRef.key,
+							(are_we_client ? "client" : "host"),
+							"firing_response"
+						];
+						gameRef.update(updates);
+
+						// Ready interface for firing animation.
+						$('#progressModal').fadeOut();
+
+                        // Do interface changes in background thread.
+                        setTimeout(function() {
+                            // Retrieve updated game state.
+                            cur_state = store.getState();
+
+    						// Display firing animation. //
+                            // First, special styling for squares just hit or missed w/ animation.
+                            var total_hits = hitMissShip.length;
+                            var successful_hits = 0;
+                            for(var i = 0; i < hitMissShip.length; i++){
+                                var on = hitMissShip[i];
+                                var on_sq = on.square;
+                                var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+                                $('#' + grid_id).addClass("grid-animating");
+                                if(on.hit){
+                                    ++successful_hits;
+                                    $('#' + grid_id).addClass("grid-animation-firing-hit");
+                                } else {
+                                    $('#' + grid_id).addClass("grid-animation-firing-miss");
+                                }
+                            }
+
+                            // Second, display their hit/missed squares from the past.
+                            var their_fired = cur_state.their_fired;
+                            for(var i = 0; i < their_fired.length; i++){
+                                // square, hit, ship
+                                var on = their_fired[i];
+                                var on_sq = on.square;
+                                var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+                                $('#' + grid_id).addClass("grid-animating");
+                                if(on.hit){
+                                    $('#' + grid_id).addClass("grid-animation-ship-hit");
+                                } else {
+                                    $('#' + grid_id).addClass("grid-animation-ship-miss");
+                                }
+                            }
+
+                            // Third, indicate which spots our ships are residing on.
+                            for(var ship_name in hit_map){
+                                var arr_on = hit_map[ship_name];
+                                for(var i = 0; i < arr_on.length; i++){
+                                    var on_sq = arr_on[i];
+                                    var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+                                    $('#' + grid_id)
+                                        .addClass("grid-animating")
+                                        .addClass("grid-animation-ship-residing")
+                                    ;
+                                }
+							}
+
+                            // Finally, update sidebar with our ships + health.
+                            // TODO
+
+                            setTimeout(function() {
+                                // Display result in terms of made / total in text modal.
+                                $('#dialogModal').find('.dialog-modal-header').text("Turn Result");
+                                var message = "They landed ";
+                                if(successful_hits == 0) message += "no hits";
+                                else if(successful_hits == 1) message += "1 hit";
+                                else message += successful_hits.toString() + " hits";
+                                message += " out of " + total_hits.toString() + ".";
+                        		$('#dialogModal').find('.dialog-modal-subheader').text(message);
+                        		$('#dialogModal').fadeIn();
+
+                                // Continue after click.
+                                $('#dialogModal').find('.btn').one("click", function() {
+                                    // Update interface for next turn.
+                                    $('.grid-animating').removeClassPrefix("grid-animat");
+                                    enableGridHover();
+            						$('.end-turn-button').fadeIn();
+                                    startTurnPrompt();
+                                });
+                            }, 3000);
+                        }, 250);
+					} else if(turn_type === "firing_response"){
+						// Retrieve response for squares fired upon.
+						var fired_response = data.board_state[1][1][turn_key][1];
+						console.log("Firing response", fired_response);
+
+                        // Save fired squares to private store.
+                        store.dispatch({ type: "UPDATE_OUR_FIRED_SQUARES", data: fired_response });
+
+						// Fade out progress modal.
+						$('#progressModal').fadeOut();
+
+                        // First, special styling for squares just hit or missed w/ animation.
+                        var total_hits = fired_response.length;
+                        var successful_hits = 0;
+                        var uniqueHits = [];
+                        for(var i = 0; i < fired_response.length; i++){
+                            var on = fired_response[i];
+                            var on_sq = on.square;
+                            var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+                            $('#' + grid_id).addClass("grid-animating");
+                            if(on.hit){
+                                ++successful_hits;
+                                $('#' + grid_id).addClass("grid-animation-firing-hit");
+                                uniqueHits.push(JSON.stringify(on_sq));
+                            } else {
+                                $('#' + grid_id).addClass("grid-animation-firing-miss-bad");
+                            }
+                        }
+
+                        // Next, display our hit/missed squares from the past.
+                        var our_fired = cur_state.our_fired;
+                        for(var i = 0; i < our_fired.length; i++){
+                            // square, hit, ship
+                            var on = our_fired[i];
+                            var on_sq = on.square;
+                            var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+                            $('#' + grid_id).addClass("grid-animating");
+                            if(on.hit){
+                                $('#' + grid_id).addClass("grid-animation-ship-hit");
+                                uniqueHits.push(JSON.stringify(on_sq));
+                            } else {
+                                $('#' + grid_id).addClass("grid-animation-ship-miss");
+                            }
+                        }
+
+                        setTimeout(function() {
+                            // Check if game over.
+                            uniqueHits = uniqueHits.filter(function(el, i, arr){
+                                return arr.indexOf(el) === i;
+                            });
+                            var our_total_successful_hits = uniqueHits.length;
+                            var winning_hit_num = all_ships.reduce(function(a, b){
+                                return a + b[1];
+                            });
+                            if(our_total_successful_hits === winning_hit_num){
+                                $('#gameResultModal').find('.game-result-modal-header').text("You Win!");
+                                $('#gameResultModal').find('.game-result-modal-subheader').text("Congratulations, you won!");
+                                $('#gameResultModal').fadeIn();
+                                var updates = {};
+                                updates["broadcast_action"] = "game_over|" + (are_we_client ? "client" : "host");
+                                gameRef.update(updates);
+                                return;
+                            }
+
+                            // Display result in terms of made / total in text modal.
+                            $('#dialogModal').find('.dialog-modal-header').text("Turn Result");
+                            var message = "You landed ";
+                            if(successful_hits == 0) message += "no hits";
+                            else if(successful_hits == 1) message += "1 hit";
+                            else message += successful_hits.toString() + " hits";
+                            message += " out of " + total_hits.toString() + ".";
+                            $('#dialogModal').find('.dialog-modal-subheader').text(message);
+                            $('#dialogModal').fadeIn();
+
+                            // Continue after click.
+                            $('#dialogModal').find('.btn').one("click", function() {
+                                // Update interface for next turn.
+                                $('.grid-animating').removeClassPrefix("grid-animat");
+
+                                // Wait for opponent's attack.
+                    			$('#progressModal').find('.progress-modal-header').text("Waiting for opponent's attack...")
+                    			$('#progressModal').find('.progress-modal-code').hide();
+                    			$('#progressModal').find('.progress-modal-subheader').hide();
+                    			$('#progressModal').fadeIn();
+                            });
+                        }, 2000);
+					}
+				} else {
+					if(turn_type === "done_firing"){
+						// Hide firing button.
+						$('.end-turn-button').fadeOut();
 					}
 				}
 			}
@@ -705,6 +1002,7 @@ $(document).ready(function() {
 	// Install click handler for grid squares.
 	$('.grid-square').click(function() {
 		if(!setup_complete) return;
+        if($(this).hasClass("grid-history-active")) return; // no re-attacking same square
 
 		// Add or remove mark on first / second click.
 		$(this).find(".missile_hover").hide();
@@ -1123,10 +1421,14 @@ $(document).ready(function() {
 		$('[data-toggle="tooltip"]').tooltip()
 	});
 
-	// Set up dialog modal. //
+	// Set up modal dismiss buttons. //
 	$('#dialogModal').find('.btn').click(function() {
 		$('#dialogModal').fadeOut();
 	});
+    $('#gameResultModal').find('.btn').click(function() {
+        //$('#gameResultModal').fadeOut();
+        window.location.reload();
+    });
 
 	/* //
 	setTimeout(function() {

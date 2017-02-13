@@ -305,6 +305,65 @@ h1, h3 {
 	right: 0px;
 }
 
+/* Grid animation styling */
+.grid-animation-ship-hit {
+	animation: none;
+	background-color: red;
+	opacity: 0.75;
+}
+
+.grid-animation-ship-miss {
+	animation: none;
+	background-color: #777;
+	opacity: 0.75;
+}
+
+.grid-animation-ship-residing {
+	animation: none;
+	background-color: orange;
+}
+
+@keyframes firing_hit {
+    from {background-color: #13242b;}
+    to {background-color: red;}
+}
+
+@keyframes firing_miss_good {
+    from {background-color: #13242b;}
+    to {background-color: #4ecc00;}
+}
+
+@keyframes firing_miss_bad {
+    from {background-color: #13242b;}
+    to {background-color: #777;}
+}
+
+.grid-animation-firing-hit {
+	animation: firing_hit 0.5s ease-in-out infinite alternate;
+	animation-play-state: running;
+}
+
+.grid-animation-firing-miss {
+	animation: firing_miss_good 0.5s ease-in-out infinite alternate;
+	animation-play-state: running;
+}
+
+.grid-animation-firing-miss-bad {
+	animation: firing_miss_bad 0.5s ease-in-out infinite alternate;
+	animation-play-state: running;
+}
+
+/* Grid history styling */
+.grid-history-miss {
+	animation: none;
+	background-color: gray;
+}
+
+.grid-history-hit {
+	animation: none;
+	background-color: red;
+}
+
 /* Color definition(s) */
 .cyan-blue {
 	color: #236486;
