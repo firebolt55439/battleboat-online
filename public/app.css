@@ -364,6 +364,16 @@ h1, h3 {
 	background-color: red;
 }
 
+@keyframes destroyed_animation {
+    from {background-color: red;}
+    to {background-color: black;}
+}
+
+.grid-history-destroyed-ship {
+	animation: destroyed_animation 1s ease-in-out infinite alternate;
+	animation-play-state: running;
+}
+
 /* Color definition(s) */
 .cyan-blue {
 	color: #236486;

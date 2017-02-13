@@ -401,6 +401,56 @@ $(document).ready(function() {
         $('#dialogModal').find('.dialog-modal-subheader').text("It is now your turn to fire at your opponent. Choose wisely!");
         $('#dialogModal').fadeIn();
     }
+    var addHistorySquares = function() {
+        // Figure out which ships we have destroyed.
+        var cur_state = store.getState();
+        var our_fired = cur_state.our_fired;
+        console.log("Our fired", our_fired);
+        var hitsByShip = {};
+        for(var i = 0; i < our_fired.length; i++){
+            var on = our_fired[i];
+            if(!on.ship) continue;
+            var ship = on.ship.toLowerCase();
+            if(!(ship in hitsByShip)){
+                hitsByShip[ship] = 1;
+            } else {
+                ++hitsByShip[ship];
+            }
+        }
+        var destroyed_ships = all_ships
+            .map(function(val){
+                var landed = hitsByShip[val[0].toLowerCase()];
+                if(landed === val[1]){
+                    return val[0].toLowerCase();
+                } else {
+                    return null;
+                }
+            })
+            .filter(function(val) {
+                return val !== null;
+            })
+        ;
+
+        // Fill in board for our hits and misses.
+        for(var i = 0; i < our_fired.length; i++){
+            var on = our_fired[i];
+            var on_sq = on.square;
+            console.log("History add", on);
+            var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+            $('#' + grid_id).addClass("grid-history-active");
+            if(on.ship){
+                var ship = on.ship.toLowerCase();
+                if(destroyed_ships.indexOf(ship) !== -1){
+                    $('#' + grid_id).addClass("grid-history-destroyed-ship");
+                }
+            }
+            if(on.hit){
+                $('#' + grid_id).addClass("grid-history-hit");
+            } else {
+                $('#' + grid_id).addClass("grid-history-miss");
+            }
+        }
+    }
     var enableGridHover = function() {
         // Enable hover and click effects.
         setup_complete = true;
@@ -408,22 +458,8 @@ $(document).ready(function() {
 			$(this).removeClass("waiting-for-setup");
 		});
 
-        // Fill in board for our hits and misses.
-        var cur_state = store.getState();
-        var our_fired = cur_state.our_fired;
-        console.log("Our fired", our_fired);
-        for(var i = 0; i < our_fired.length; i++){
-            var on = our_fired[i];
-            var on_sq = on.square;
-            console.log("History add", on);
-            var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
-            $('#' + grid_id).addClass("grid-history-active");
-            if(on.hit){
-                $('#' + grid_id).addClass("grid-history-hit");
-            } else {
-                $('#' + grid_id).addClass("grid-history-miss");
-            }
-        }
+        // Add history to interface.
+        addHistorySquares();
     }
     var disableGridHover = function() {
         setup_complete = false;
@@ -477,8 +513,36 @@ $(document).ready(function() {
 				error = "Must fire at least one missile per turn.";
 			} else if(mode === "regular" && missiles_fired !== 1){
 				error = "Can only fire one missile per turn in classic Battleship.";
-			}
-			// TODO: Salvo support
+			} else if(mode === "salvo"){
+                // Retrieve our current hit state.
+                var overall_state = store.getState();
+                var hit_map = parseHitString(overall_state.hit_string);
+
+                // Retrieve their hit squares.
+                var their_fired = overall_state.their_fired.map(function(val) {
+                    return JSON.stringify(val.square);
+                });
+
+                // Count extant ships.
+                var extant_ships = 0;
+                for(var ship_name in hit_map){
+                    var on_arr = hit_map[ship_name];
+                    for(var i = 0; i < on_arr.length; i++){
+                        var on = on_arr[i];
+                        if(their_fired.indexOf(JSON.stringify(on)) === -1){
+                            // We still have at least one square of the ship alive.
+                            ++extant_ships;
+                            break;
+                        }
+                    }
+                }
+                //console.log("extant ships", extant_ships);
+
+                // Verify number of missiles.
+                if(missiles_fired > extant_ships){
+                    error = "In salvo mode, you can only fire as many missiles as you have ships remaining.";
+                }
+            }
 
 			// Handle error, if applicable.
 			if(error !== undefined){
@@ -539,6 +603,7 @@ $(document).ready(function() {
 
 		// Handle special keys.
 		var setup_check = false;
+        var have_we_lost = false;
 		if(key === "broadcast_action"){
 			var action = changed_data.val();
 			if(action === "setup"){
@@ -560,10 +625,7 @@ $(document).ready(function() {
                 var winner = action.split("|")[1];
                 var us_str = (are_we_client ? "client" : "host");
                 if(winner !== us_str){
-                    $('#gameResultModal').find('.game-result-modal-header').text("You Lose.");
-                    $('#gameResultModal').find('.game-result-modal-subheader').text("Your opponent won. Avenge yourself!");
-                    $('#gameResultModal').fadeIn();
-                    return;
+                    have_we_lost = true;
                 }
             }
 		}
@@ -602,6 +664,29 @@ $(document).ready(function() {
 					}, 150);
 				}
 			}
+
+            // Check if we have lost, and handle accordingly.
+            if(have_we_lost){
+                // Reveal where the opponent's ships were.
+                $('.grid-animating').removeClassPrefix("grid-animat");
+                disableGridHover();
+                addHistorySquares();
+                var hit_map = parseHitString(data.winning_position);
+                for(var ship_name in hit_map){
+                    var on_arr = hit_map[ship_name];
+                    for(var i = 0; i < on_arr.length; i++){
+                        var on_sq = on_arr[i];
+                        var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
+                        $('#' + grid_id).addClass("grid-animation-ship-residing");
+                    }
+                }
+
+                // Display result modal.
+                $('#gameResultModal').find('.game-result-modal-header').text("You Lose.");
+                $('#gameResultModal').find('.game-result-modal-subheader').text("Your opponent won - their ship arrangement is being displayed. Avenge yourself!");
+                $('#gameResultModal').fadeIn();
+                return;
+            }
 
 			// Handle turn types.
 			if(key === "turn_end_key"){
@@ -712,10 +797,12 @@ $(document).ready(function() {
                                 for(var i = 0; i < arr_on.length; i++){
                                     var on_sq = arr_on[i];
                                     var grid_id = 'grid-' + on_sq[0].toString() + '-' + on_sq[1].toString();
-                                    $('#' + grid_id)
-                                        .addClass("grid-animating")
-                                        .addClass("grid-animation-ship-residing")
-                                    ;
+                                    if(!$('#' + grid_id).hasClass("grid-animating")){
+                                        $('#' + grid_id)
+                                            .addClass("grid-animating")
+                                            .addClass("grid-animation-ship-residing")
+                                        ;
+                                    }
                                 }
 							}
 
@@ -790,6 +877,7 @@ $(document).ready(function() {
 
                         setTimeout(function() {
                             // Check if game over.
+                            // TODO: Pass our hit string to reveal ship locations to them
                             uniqueHits = uniqueHits.filter(function(el, i, arr){
                                 return arr.indexOf(el) === i;
                             });
@@ -802,6 +890,8 @@ $(document).ready(function() {
                                 $('#gameResultModal').find('.game-result-modal-subheader').text("Congratulations, you won!");
                                 $('#gameResultModal').fadeIn();
                                 var updates = {};
+                                updates["winner"] = (are_we_client ? "client" : "host")
+                                updates["winning_position"] = cur_state.hit_string;
                                 updates["broadcast_action"] = "game_over|" + (are_we_client ? "client" : "host");
                                 gameRef.update(updates);
                                 return;
