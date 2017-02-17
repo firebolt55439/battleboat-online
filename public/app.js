@@ -1,7 +1,5 @@
 // TODO: More variants, by game ID, sharing / social integration.
 // TODO: Play AI if no opponent found in n minutes
-// TODO: Your ships (w/ svg images) on right and n squares side-by-side with filled in
-// with x's or in red if hit with n = ship length and put ship name and label there as well
 // TODO: Ensure reusability of interface for another game
 var setup_complete = false, gameRef = undefined;
 
@@ -106,6 +104,95 @@ $(document).ready(function() {
         }
 	}
 	var store = Redux.createStore(store_handler);
+
+    // Implement game AI. //
+    var interesting_keys = ["turn_end_key", "broadcast_action"];
+    var startGameAi = function(already_hosting, data){
+        // TODO: Ensure emulator complete, responds to all necessary events, broadcasted
+        // or otherwise, and sends necessary events (e.g. game over, etc.)
+        // Inform user of choice.
+        $('#dialogModal').find('.dialog-modal-header').text("Paired with AI");
+        $('#dialogModal').find('.dialog-modal-subheader').text("Due to not finding an opponent in a reasonable amount of time, you have been paired with a Battleboat Al. Will the robots be our new overlords? Let's find out!");
+        $('#dialogModal').fadeIn();
+
+        // Define master AI game handler.
+        var aiRef = undefined;
+        var masterAiHandler = function(){
+            //
+        };
+
+        // Continue after click.
+        var ai_user_info = [/*uid=*/0, "Battleboat Al", "/assets/img/ai.jpg"];
+        $('#dialogModal').find('.btn').one("click", function() {
+            setTimeout(function() {
+                if(!already_hosting){
+                    // Create a game.
+                    var modes = ["regular", "salvo"];
+                    var mode = modes[Math.floor(Math.random() * modes.length)]; // pick mode at random
+                    var entry = {
+            			users: [
+            				ai_user_info
+            			],
+            			mode: mode,
+            			user_states: ["SETUP_PENDING"],
+            			board_state: [],
+            			update_timestamp: Date.now(),
+            			started: 0
+            		};
+
+            		// Generate database insertion query.
+            		var newPostKey = firebase.database().ref().child('games').push().key;
+            		entry["id"] = newPostKey;
+            		var updates = {};
+                    updates['/games/' + newPostKey] = entry;
+
+                    // Insert the game entry.
+                    firebase.database().ref().update(updates);
+
+                    // Grab a game database reference.
+                    aiRef = firebase.database().ref("games/" + newPostKey);
+
+                    // Handle initial ACK ping-pong.
+            		var hasStarted = 0;
+            		var onGameDataChange = function(changed_data){
+            			if(changed_data.getKey() !== "started") return; // don't waste bandwidth
+                        var changed_val = changed_data.val();
+                        if(changed_val == 1){
+                            var updates = {};
+                            updates['started'] = 2;
+                            aiRef.update(updates);
+                        } else if(changed_val == 3){
+                            // Detach this callback and defer to main callback.
+                            aiRef.off("child_added", onGameDataChange);
+                            aiRef.off("child_changed", onGameDataChange);
+                            aiRef.on("child_added", masterAiHandler);
+                            aiRef.on("child_changed", masterAiHandler);
+
+                            // Inform opponent we are starting setup.
+                            var updates = {};
+                            updates["user_states/0"] = "DOING_SETUP";
+                            aiRef.update(updates);
+                        }
+                    };
+                    aiRef.on("child_added", onGameDataChange);
+            		aiRef.on("child_changed", onGameDataChange);
+                } else {
+                    // Grab a game database reference.
+                    aiRef = firebase.database().ref("/games/" + data.id);
+
+                    // Update database entry object.
+                    var base_url = "/games/" + data.id + "/";
+                    var updates = {};
+                    updates["/started"] = 1;
+                    updates["/users/1"] = ai_user_info;
+                    updates["/user_states/1"] = "SETUP_PENDING";
+                    updates["/update_timestamp"] = Date.now();
+                    updates["/board_state"] = [];
+                    aiRef.update(updates);
+                }
+            }, 10);
+        });
+    };
 
 	// Generate helper function for hit-testing grid squares. //
 	var gridIndexForElem = undefined;
@@ -611,7 +698,6 @@ $(document).ready(function() {
 	}
 
 	// Define main game event handler.
-	var interesting_keys = ["turn_end_key", "broadcast_action"];
 	var masterGameHandler = function(changed_data){
 		// Check if the event is interesting (e.g. worth a database fetch).
 		var key = changed_data.getKey();
@@ -1204,6 +1290,7 @@ $(document).ready(function() {
 	set_up_container.appendTo($('#newGameModal'));
 
 	// Install click handlers for new game buttons.
+    var ai_threshold_minutes = 1.5; // threshold in minutes to play against an Al
 	$('.new-game-btn').click(function() {
 		var mode = $(this).data("mode");
 
@@ -1317,16 +1404,30 @@ $(document).ready(function() {
 		}
 		gameRef.on("child_added", onGameDataChange);
 		gameRef.on("child_changed", onGameDataChange);
-		var interval_timer = undefined;
+		var interval_timer = undefined, search_start_time = Date.now();
 		var updateTimestamp = function() {
 			if(hasStarted > 0){
 				clearInterval(interval_timer);
+                return;
 			}
 			var updates = {};
 			updates['update_timestamp'] = Date.now();
 			gameRef.update(updates);
+
+            // Fallback to an Al if time exceeds threshold.
+            var elapsed_search_time = (Date.now() - search_start_time) / (60.0 * 1000.0); // in minutes
+            if(elapsed_search_time >= ai_threshold_minutes || true){
+                setTimeout(function() {
+                    startGameAi(/*hosting=*/true, {
+                        "id": newPostKey
+                    });
+                }, 10);
+                clearInterval(interval_timer);
+                return;
+            }
 		}
 		interval_timer = setInterval(updateTimestamp, 10000); // update timestamp every 10 seconds
+        updateTimestamp();
 	});
 
 	// Install click handlers for join game buttons.
@@ -1479,14 +1580,21 @@ $(document).ready(function() {
 						gameRef.on("child_added", onGameDataChange);
 						gameRef.on("child_changed", onGameDataChange);
 					}, 10);
-					// ...
 				}
-
-				// ...
 			};
 			var threshold = Date.now() - 1000 * 60 * threshold_minutes;
 			ref.child("games").orderByChild("update_timestamp").startAt(threshold).on("child_added", searchCurrentGames);
 			//ref.child("games").orderByChild("update_timestamp").startAt(threshold).on("child_changed", searchCurrentGames);
+
+            // Fallback to an Al if time exceeds threshold.
+            ai_threshold_minutes = 0.001;
+            setTimeout(function() {
+                if(!searchComplete){
+                    startGameAi(/*hosting=*/false, {
+                        //
+                    });
+                }
+            }, (ai_threshold_minutes * 60 * 1000));
 
 			/*
 			// TODO
