@@ -490,6 +490,9 @@ $(document).ready(function() {
 		$('.draggable-ship').fadeOut();
 		$('.ship-occupying').removeClassPrefix("ship-");
 
+        // Display ship sidebar.
+        $('#ship_area').show();
+
 		// Wait for opponent if we are client.
 		var cur_state = store.getState().game_state;
 		var are_we_client = cur_state.client;
@@ -767,6 +770,30 @@ $(document).ready(function() {
 						];
 						gameRef.update(updates);
 
+                        // Update ship sidebar.
+                        $('.health-red').removeClass("health-red");
+                        var their_fired_json = cur_state.their_fired.map(function(val) {
+                            return JSON.stringify(val.square);
+                        });
+                        for(var ship_name in hit_map){
+                            // Count squares hit for this ship.
+                            var on_arr = hit_map[ship_name];
+                            var hit_squares = 0;
+                            for(var i = 0; i < on_arr.length; i++){
+                                var on = on_arr[i];
+                                if(their_fired_json.indexOf(JSON.stringify(on)) !== -1){
+                                    // This ship square has been fired upon.
+                                    ++hit_squares;
+                                }
+                            }
+
+                            // Update health of ship accordingly.
+                            var ship_health = $('.ship-health-' + ship_name.toLowerCase());
+                            for(var i = 0; i < hit_squares; i++){
+                                ship_health.find(':nth-child(' + (i + 1).toString() + ')').addClass("health-red");
+                            }
+                        }
+
 						// Ready interface for firing animation.
 						$('#progressModal').fadeOut();
 
@@ -996,6 +1023,46 @@ $(document).ready(function() {
 	// Install account container.
 	status_container.appendTo($('#account_area'));
 
+    // Set up the ships area. //
+	// Set up the container.
+	var ship_container = $('<div class="ship-container"></div>');
+
+	// Add ships to container.
+    var ship_div = $('<div></div>');
+    var prettyShipNames = [
+        "Aircraft Carrier",
+        "Battleship",
+        "Cruiser",
+        "Submarine",
+        "Destroyer"
+    ];
+    for(var i = 0; i < all_ships.length; i++){
+        var on = all_ships[i]; // [name, length]
+        var name = on[0].toLowerCase();
+        var svg_src = "/assets/svg/ships/" + name + ".svg";
+        var cur_ship = $('<div> \
+            <object class="ship-sidebar-img" data="' + svg_src + '" type="image/svg+xml" alt="Ship image"> \
+            </object> \
+            <div class="text-center"> \
+                <p class="ship-name">' + prettyShipNames[i] + '&nbsp;</p> \
+                <p class="ship-health"></p> \
+            </div> \
+        </div>');
+        cur_ship.find('.ship-health').addClass("ship-health-" + name);
+        cur_ship.find('.ship-health').append('[');
+        for(var j = 0; j < on[1]; j++){
+            cur_ship.find('.ship-health').append($('<i class="fa fa-square health-square" aria-hidden="true"></i>'))
+        }
+        cur_ship.find('.ship-health').append(']');
+        cur_ship.appendTo(ship_div);
+    }
+
+    // Install ship div.
+    ship_div.appendTo(ship_container);
+
+	// Install account container.
+	ship_container.appendTo($('#ship_area'));
+
 	// Set up the user areas. //
 	// Hide versus text.
 	$('#versusText').hide();
@@ -1057,8 +1124,8 @@ $(document).ready(function() {
 	header.appendTo(game_container);
 
 	// Set up the grid.
-	var svg_missile_hover = '<svg class="missile_hover grid-image" style="display: none;" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"	 viewBox="0 0 25.979 25.979" style="enable-background:new 0 0 25.979 25.979;" xml:space="preserve"><g>	<path  d="M25.744,6.604C26.08,6.267,26.107,6.02,25.48,6.02c-0.628,0-4.556,0-5.068,0		c-0.512,0-0.533,0.016-0.814,0.297c-0.281,0.281-4.604,4.607-4.604,4.607s5.413,0,5.877,0c0.465,0,0.633-0.037,0.912-0.318		C22.063,10.326,25.408,6.94,25.744,6.604z"/>	<path  d="M19.375,0.235c0.336-0.335,0.584-0.363,0.584,0.264s0,4.555,0,5.067S19.943,6.1,19.662,6.381		s-4.607,4.604-4.607,4.604s0-5.414,0-5.878c0-0.464,0.037-0.632,0.318-0.912C15.653,3.916,19.039,0.571,19.375,0.235z"/>	<path  d="M1.621,16.53c-2.161,2.162-2.162,5.666-0.001,7.828c2.161,2.161,5.667,2.161,7.828,0		c0.93-0.931,6.001-6,6.931-6.93c2.161-2.161,2.161-5.666,0-7.829c-2.162-2.162-5.666-2.161-7.828,0		C7.621,10.531,2.551,15.6,1.621,16.53z"/></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g></svg>';
-	var svg_missile_fired = '<svg class="missile_fired grid-image" style="display: none;" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"	 width="459.615px" height="459.614px" viewBox="0 0 459.615 459.614" style="enable-background:new 0 0 459.615 459.614;"	 xml:space="preserve"><g>	<path d="M455.456,249.343l-13.932,3.993v53.451h-40.142l-30.042-37.909h-68.935v50.638c0,6.752-2.573,12.224-5.734,12.224		l-78.506-62.856H101.073c-1.374,0-2.733-0.027-4.09-0.05v-78.049c1.357-0.022,2.717-0.047,4.09-0.047h121.717l73.873-62.862		c3.169,0,5.729,5.475,5.729,12.238v50.624h64.635l34.354-43.598h40.142v59.82l13.927,4.169		C464.818,230.934,455.456,249.343,455.456,249.343z M0,229.808c0,19.485,34.821,35.634,80.359,38.594v-77.169		C34.827,194.19,0,210.327,0,229.808z"/></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g><g></g></svg>';
+	var svg_missile_hover = "";
+	var svg_missile_fired = "";
 
 	for(var i = 0; i < 10; i++){
 		var row = $('<div class="row grid-row"></div>');
@@ -1268,6 +1335,8 @@ $(document).ready(function() {
 
 		// Prompt for game id.
 		if(type == "by_game_id"){
+            // TODO
+            alert("Not implemented yet - sorry!");
 			// ...
 			return;
 		}

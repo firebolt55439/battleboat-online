@@ -20,8 +20,7 @@ h1, h3 {
 .grid-square {
 	position: relative;
 	display: block;
-	padding-top: 42px;
-	padding-bottom: 42px;
+	padding-bottom: 84px;
 	/*background-color: rgba(64,57,255,1.0);*/
 	background-color: #13242b;
 	border: 2px solid #337ab7;
@@ -143,6 +142,43 @@ h1, h3 {
 	padding-top: 10px;
 	background-color: rgba(19,36,43,0.5);
 	border-radius: 5px;
+}
+
+/* Ships area */
+
+#ship_area {
+	position: absolute;
+	display: block;
+	top: 28%;
+	right: 1%;
+	width: 15%;
+	height: 35%;
+}
+
+.ship-container {
+	padding-top: 10px;
+	background-color: rgba(19,36,43,0.5);
+	border-radius: 5px;
+}
+
+.ship-sidebar-img {
+	margin-top: -40px;
+	margin-bottom: -80px;
+}
+
+.ship-name {
+	display: inline;
+	color: #facccc;
+	padding-left: 5%;
+}
+
+.ship-health {
+	display: inline;
+	color: #575;
+}
+
+.health-red {
+	color: #911;
 }
 
 /* Grid square styling */
