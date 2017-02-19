@@ -1903,7 +1903,7 @@ $(document).ready(function() {
 
             // Fallback to an Al if time exceeds threshold.
             var elapsed_search_time = (Date.now() - search_start_time) / (60.0 * 1000.0); // in minutes
-            if(elapsed_search_time >= ai_threshold_minutes || true){
+            if(elapsed_search_time >= ai_threshold_minutes){
                 setTimeout(function() {
                     startGameAi(/*hosting=*/true, {
                         "id": newPostKey
@@ -2074,7 +2074,6 @@ $(document).ready(function() {
 			//ref.child("games").orderByChild("update_timestamp").startAt(threshold).on("child_changed", searchCurrentGames);
 
             // Fallback to an Al if time exceeds threshold.
-            ai_threshold_minutes = 0.001;
             setTimeout(function() {
                 if(!searchComplete){
                     startGameAi(/*hosting=*/false, {
