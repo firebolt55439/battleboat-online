@@ -1837,7 +1837,7 @@ $(document).ready(function() {
 	set_up_container.appendTo($('#newGameModal'));
 
 	// Install click handlers for new game buttons.
-    var ai_threshold_minutes = 1.5; // threshold in minutes to play against an Al
+    var ai_threshold_minutes = 0.95; // threshold in minutes to play against an Al
 	$('.new-game-btn').click(function() {
 		var mode = $(this).data("mode");
 
