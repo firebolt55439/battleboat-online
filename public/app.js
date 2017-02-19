@@ -79,34 +79,42 @@ $(document).ready(function() {
         "their_fired": [],
         "our_fired": []
     }
+    initialState["ai_state"] = jQuery.extend(true, {}, initialState);
 	var store_handler = function(state = initialState, action){
 		var type = action.type;
-		if(type === "STORE_USER_INFO"){
-			var ret = jQuery.extend({}, state);
-			ret["user_info"] = action.data;
-			return ret;
-		} else if(type === "UPDATE_GAME_STATE"){
-			var ret = jQuery.extend({}, state);
-			ret["game_state"] = action.data;
-			return ret;
-		} else if(type === "SET_HIT_STRING"){
-			var ret = jQuery.extend({}, state);
-			ret["hit_string"] = action.data;
-			return ret;
-		} else if(type === "UPDATE_THEIR_FIRED_SQUARES"){
-            var ret = jQuery.extend({}, state);
-            Array.prototype.push.apply(ret["their_fired"], action.data);
-			return ret;
-        } else if(type === "UPDATE_OUR_FIRED_SQUARES"){
-            var ret = jQuery.extend({}, state);
-            Array.prototype.push.apply(ret["our_fired"], action.data);
-			return ret;
+        var main_ret = jQuery.extend(true, {}, state);
+        var ret = main_ret;
+        var ai = false;
+        if(type.indexOf("AI_") === 0){
+            type = type.substr(3);
+            ai = true;
+            ret = main_ret.ai_state;
         }
+		if(type === "STORE_USER_INFO"){
+			ret["user_info"] = action.data;
+		} else if(type === "UPDATE_GAME_STATE"){
+			ret["game_state"] = action.data;
+		} else if(type === "SET_HIT_STRING"){
+			ret["hit_string"] = action.data;
+		} else if(type === "UPDATE_THEIR_FIRED_SQUARES"){
+            Array.prototype.push.apply(ret["their_fired"], action.data);
+        } else if(type === "UPDATE_OUR_FIRED_SQUARES"){
+            console.log("Updating our fired squares", ai);
+            Array.prototype.push.apply(ret["our_fired"], action.data);
+        }
+        return main_ret;
 	}
 	var store = Redux.createStore(store_handler);
 
     // Implement game AI. //
     var interesting_keys = ["turn_end_key", "broadcast_action"];
+    var all_ships = [
+		["Carrier", 5],
+		["Battleship", 4],
+		["Cruiser", 3],
+		["Submarine", 3],
+		["Destroyer", 2]
+	];
     var startGameAi = function(already_hosting, data){
         // TODO: Ensure emulator complete, responds to all necessary events, broadcasted
         // or otherwise, and sends necessary events (e.g. game over, etc.)
@@ -117,8 +125,446 @@ $(document).ready(function() {
 
         // Define master AI game handler.
         var aiRef = undefined;
-        var masterAiHandler = function(){
-            //
+        var ai_store = store;
+        var probabilityDensityCalc = function(hit_map){
+            // Figure out which of their ships are alive.
+            var cur_state = ai_store.getState().ai_state;
+            var our_fired = cur_state.our_fired;
+            var hits_by_ship = {};
+            our_fired.map(function(val) {
+                if(val.ship){
+                    val.ship = val.ship.toLowerCase();
+                    if(val.ship in hits_by_ship){
+                        hits_by_ship[val.ship] += 1;
+                    } else {
+                        hits_by_ship[val.ship] = 1;
+                    }
+                }
+            });
+            var extant_ships = all_ships
+                .filter(function(arr){
+                    var ship_type = arr[0].toLowerCase();
+                    var hits;
+                    if(ship_type in hits_by_ship){
+                        hits = hits_by_ship[ship_type];
+                    } else {
+                        hits = 0;
+                    }
+                    return hits < arr[1];
+                })
+                .map(function(arr){
+                    return [arr[0].toLowerCase(), arr[1]];
+                })
+            ;
+            var extant_ship_names = extant_ships.map(function(arr){
+                return arr[0];
+            });
+            var destroyed_ship_names = all_ships
+                .filter(function(arr){
+                    return extant_ship_names.indexOf(arr[0].toLowerCase()) === -1;
+                })
+                .map(function(arr){
+                    return arr[0].toLowerCase();
+                })
+            ;
+            console.log("Their extant ships", extant_ships);
+
+            // Initialize probability density function matrix.
+            var density_function = [];
+            var tens = [0,1,2,3,4,5,6,7,8,9];
+            density_function = tens.map(function(val){
+                return tens.map(function(){ return 0; });
+            });
+
+            // Populate probability density function matrix.
+            var obstructions_json = our_fired
+                .filter(function(val){
+                    // Misses and destroyed ships count as obstructions.
+                    return !val.hasOwnProperty("ship") ||
+                           destroyed_ship_names.indexOf(val.ship.toLowerCase()) !== -1;
+                })
+                .map(function(val){
+                    return JSON.stringify(val.square);
+                })
+            ;
+            var non_destroyed_json = our_fired
+                .filter(function(val){
+                    return val.hasOwnProperty("ship") &&
+                           destroyed_ship_names.indexOf(val.ship.toLowerCase()) === -1;
+                })
+                .map(function(val){
+                    return JSON.stringify(val.square);
+                })
+            ;
+            var non_destroyed_bonus = 50; // score weightage granted for ship passing through non-destroyed point
+            //console.log("our fired", our_fired);
+            for(let on_arr of extant_ships){
+                var ship_type = on_arr[0], length = on_arr[1];
+                for(var orientation = 0; orientation < 2; orientation++){
+                    for(var r = 0; r < 10; r++){
+                        for(var c = 0; c < 10; c++){
+                            // Filter out-of-bounds positions.
+                            var end_r = r, end_c = c;
+                            if(orientation == 0) end_c += (length - 1);
+                            if(orientation == 1) end_r += (length - 1);
+                            if(end_r > 9 || end_c > 9) continue;
+
+                            // Generate list of occupied squares.
+                            var squares = [];
+                            for(var i = r; i <= end_r; i++){
+                                for(var j = c; j <= end_c; j++){
+                                    squares.push([i, j]);
+                                }
+                            }
+
+                            // Filter squares that the ship cannot be placed
+                            // at.
+                            var occ_squares = squares
+                                .map(function(val){
+                                    return JSON.stringify(val);
+                                })
+                                .filter(function(val){
+                                    return obstructions_json.indexOf(val) !== -1;
+                                })
+                            ;
+                            if(occ_squares.length > 0){
+                                continue;
+                            }
+
+                            // Check if ship passes through a non-destroyed ship square.
+                            var score = 1;
+                            var non_destroyed_squares_passing = squares
+                                .map(function(val){
+                                    return JSON.stringify(val);
+                                })
+                                .filter(function(val){
+                                    return non_destroyed_json.indexOf(val) !== -1;
+                                })
+                            ;
+                            score += non_destroyed_bonus * non_destroyed_squares_passing.length;
+
+                            // Increment counters.
+                            for(let pos of squares){
+                                density_function[pos[0]][pos[1]] += score;
+                            }
+                        }
+                    }
+                }
+            }
+            console.log("Final probability density function", density_function);
+
+            // Select the maxes in descending order of the probability density
+            // function until arriving at a square that we have not yet fired
+            // at.
+            var our_fired_json = our_fired.map(function(val){
+                return JSON.stringify(val.square);
+            });
+            var sorted = [];
+            for(var r = 0; r < 10; r++){
+                for(var c = 0; c < 10; c++){
+                    sorted.push([
+                        [r, c],
+                        density_function[r][c]
+                    ])
+                }
+            }
+            sorted = sorted.filter(function(val){
+                return our_fired_json.indexOf(JSON.stringify(val[0])) === -1;
+            });
+            sorted.sort(function(a, b){
+                // Flipped to do an ascending sort.
+                if(a[1] < b[1]){
+                    return 1;
+                } else if(a[1] > b[1]){
+                    return -1;
+                } else return 0;
+            });
+            console.log("Density function maxes", sorted);
+
+            // Select as many maxes as applicable to the current
+            // game mode.
+            var allowed_count = 0;
+            if(cur_state.game_state.mode === "regular") allowed_count = 1;
+            else if(cur_state.game_state.mode === "salvo"){
+                var their_fired_json = ai_store.getState().ai_state.their_fired
+                    .map(function(val) {
+                        return JSON.stringify(val.square);
+                    })
+                ;
+                var our_extant_ships = 0;
+                for(var ship_type in hit_map){
+                    var alive_squares = hit_map[ship_type]
+                        .map(function(val){
+                            return JSON.stringify(val);
+                        })
+                        .filter(function(val){
+                            return their_fired_json.indexOf(val) === -1;
+                        })
+                    ;
+                    if(alive_squares.length > 0) ++our_extant_ships;
+                }
+                allowed_count = our_extant_ships;
+            }
+            var final_guesses = [];
+            for(var i = 0; i < allowed_count; i++){
+                final_guesses.push(sorted[i][0]);
+            }
+            console.log("Final guesses", final_guesses);
+            return final_guesses;
+        }
+        var masterAiHandler = function(changed_data){
+            // Check if the event is interesting (e.g. worth a database fetch).
+    		var key = changed_data.getKey();
+    		if(interesting_keys.indexOf(key) === -1) return;
+            //console.log("Current AI state", ai_store.getState().ai_state);
+            //console.log("Current AI stats:", ai_store.getState().ai_state.our_fired, ai_store.getState().ai_state.our_fired.length);
+    		//console.log(key);
+
+            // Handle special actions here.
+            if(key === "broadcast_action"){
+    			var action = changed_data.val();
+    			if(action === "setup"){
+    				// Decide on ship positions.
+                    var shipPositions = {};
+                    var occupied = [];
+                    for(var i = 0; i < all_ships.length; i++){
+                        var ship_type = all_ships[i][0].toLowerCase();
+                        var length = all_ships[i][1];
+
+                        // Place this somewhere random and available.
+                        var placed = false, occ = [];
+                        while(!placed){
+                            var r = Math.floor(Math.random() * 10);
+                            var c = Math.floor(Math.random() * 10);
+                            var orientation = Math.floor(Math.random() * 2); // 0 = horizontal, 1 = vertical
+                            occ = [];
+                            if(orientation == 0){
+                                // Horizontal
+                                for(var j = c; j < (c + length); j++){
+                                    occ.push([r, j]);
+                                }
+                            } else if(orientation == 1){
+                                // Vertical
+                                for(var j = r; j < (r + length); j++){
+                                    occ.push([j, c]);
+                                }
+                            }
+                            var passed = true;
+                            for(let sq of occ){
+                                if(sq[0] > 9 || sq[1] > 9){
+                                    passed = false;
+                                    break;
+                                }
+                            }
+                            if(!passed) continue;
+                            var clashing = occ.filter(function(val) {
+                                return occupied.indexOf(JSON.stringify(val)) !== -1;
+                            });
+                            if(clashing.length == 0){
+                                //
+                                console.log("AI: Placed " + ship_type + " at [" + r + ", " + c + "] with orientation " + orientation);
+                                //
+                                placed = true;
+                            }
+                        }
+
+                        // Save the placement.
+                        shipPositions[ship_type] = occ;
+                        occ.map(function(val){
+                            occupied.push(JSON.stringify(val));
+                        });
+                    }
+
+                    // Broadcast that we are done with setup.
+                    setTimeout(function() {
+                        // Save to database.
+                        var updates = {};
+                        var are_we_client = already_hosting;
+                        var user_num = (are_we_client ? "1" : "0");
+                        var user_int = parseInt(user_num);
+                        var hit_str = generateHitString(shipPositions);
+                        updates['board_state/0/1/' + user_num] = "no_hit_str"; // keep hit string private for security purposes
+                        updates['user_states/' + user_num] = "SETUP_COMPLETE";
+                        updates['broadcast_action'] = "setup_ended_" + (are_we_client ? "client" : "host");
+                        aiRef.update(updates);
+
+                        // Store hit string in private store.
+                        ai_store.dispatch({ type: "AI_SET_HIT_STRING", data: hit_str });
+
+                        // Make first turn if we are host.
+                        if(!already_hosting){
+                            // Calculate response using a probability density function. //
+                            var final_guesses = probabilityDensityCalc(shipPositions);
+
+                            // Send response with a time delay.
+                            setTimeout(function() {
+                                // Transmit response.
+                                var newHistRef = aiRef.child("/board_state/1/1").push();
+                                newHistRef.set([
+                                	"host",
+                                	final_guesses
+                                ]);
+                                var updates = {};
+                                updates['turn_end_key'] = [
+                                	newHistRef.key,
+                                	(are_we_client ? "client" : "host"),
+                                	"done_firing"
+                                ];
+                                aiRef.update(updates);
+                            }, 6500);
+                        }
+                    }, 1500);
+
+    				// Allow current game state to be saved. -
+    			}
+            }
+
+    		// Grab current game state from database.
+    		aiRef.once("value", function(data) {
+    			// Get current game state.
+    			var cur_state = ai_store.getState().ai_state;
+    			var game_state = cur_state.game_state;
+    			var are_we_client = cur_state.game_state.client;
+
+    			// Retrieve value from reference.
+    			data = data.val();
+    			console.log("Master AI handler", data);
+
+    			// Update store as necessary.
+    			var new_state = {
+    				"client": already_hosting,
+    				"mode": data.mode,
+    				"board_state": data.board_state,
+    			};
+
+    			// Send new state to store.
+    			ai_store.dispatch({type: "AI_UPDATE_GAME_STATE", data: new_state});
+                if(key === "turn_end_key"){
+    				var turn_data = changed_data.val();
+    				var turn_key = turn_data[0];
+    				var whose_turn = turn_data[1], turn_type = turn_data[2];
+    				var our_turn = (are_we_client ? "client" : "host");
+                    //console.log("AI Turns:", whose_turn, our_turn);
+    				if(whose_turn !== our_turn){ // don't respond to our own events
+    					if(turn_type === "done_firing"){
+    						// Retrieve our current hit state.
+    						var hit_map = parseHitString(cur_state.hit_string);
+
+    						// Retrieve the squares they fired on.
+    						var fired_squares = data.board_state[1][1][turn_key][1];
+
+    						// Count how many squares were hit, and belonging to
+    						// which ship.
+    						var hitMissShip = [];
+    						for(var i = 0; i < fired_squares.length; i++){
+    							var on = JSON.stringify(fired_squares[i]);
+    							var ship_hit = undefined, square_hit = false;
+    							for(var ship_name in hit_map){
+    								var hit = (hit_map[ship_name].map(function(val) {
+    									return JSON.stringify(val);
+    								}).indexOf(on)) !== -1;
+    								if(hit){
+    									ship_hit = ship_name;
+    									square_hit = true;
+    									break;
+    								}
+    							}
+                                var pushing = {
+    								square: fired_squares[i],
+    								hit: square_hit
+    							};
+                                if(square_hit){
+                                    pushing["ship"] = ship_hit;
+                                }
+    							hitMissShip.push(pushing);
+    						}
+
+                            // Save fired squares to private store.
+                            ai_store.dispatch({ type: "AI_UPDATE_THEIR_FIRED_SQUARES", data: hitMissShip });
+
+    						// Transmit which squares were hit.
+    						var newHistRef = aiRef.child("board_state/1/1").push();
+    						newHistRef.set([
+    							(+ are_we_client), // cast bool to int
+    							hitMissShip
+    						]);
+    						var updates = {};
+    						updates['turn_end_key'] = [
+    							newHistRef.key,
+    							(are_we_client ? "client" : "host"),
+    							"firing_response"
+    						];
+    						aiRef.update(updates);
+
+                            // Calculate response using a probability density function. //
+                            var final_guesses = probabilityDensityCalc(hit_map);
+
+                            // Send response with a time delay.
+                            setTimeout(function() {
+                                // Transmit response.
+                                var newHistRef = aiRef.child("/board_state/1/1").push();
+                                newHistRef.set([
+                                	(are_we_client ? "client" : "host"),
+                                	final_guesses
+                                ]);
+                                var updates = {};
+                                updates['turn_end_key'] = [
+                                	newHistRef.key,
+                                	(are_we_client ? "client" : "host"),
+                                	"done_firing"
+                                ];
+                                aiRef.update(updates);
+                            }, 4500);
+    					} else if(turn_type === "firing_response"){
+    						// Retrieve response for squares fired upon.
+    						var fired_response = data.board_state[1][1][turn_key][1];
+
+                            // Save fired squares to private store.
+                            ai_store.dispatch({ type: "AI_UPDATE_OUR_FIRED_SQUARES", data: fired_response });
+
+                            // Count our unique landed hits.
+                            var uniqueHits = [];
+                            for(let obj of fired_response){
+                                if(obj.hasOwnProperty("ship")){
+                                    uniqueHits.push(JSON.stringify(obj.square));
+                                }
+                            }
+                            for(let obj of cur_state.our_fired){
+                                if(obj.hasOwnProperty("ship")){
+                                    uniqueHits.push(JSON.stringify(obj.square));
+                                }
+                            }
+
+                            // Filter unique hits for duplicates.
+                            uniqueHits = uniqueHits.filter(function(el, i, arr){
+                                return arr.indexOf(el) === i;
+                            });
+
+                            // Continue after time delay.
+                            setTimeout(function() {
+                                // Check if game over.
+                                var our_total_successful_hits = uniqueHits.length;
+                                var winning_hit_num = all_ships.reduce(function(a, b){
+                                    return a + b[1];
+                                }, /*initialValue=*/0);
+                                //console.log("Winning hit num", winning_hit_num);
+                                if(our_total_successful_hits === winning_hit_num){
+                                    console.log("AI wins.");
+                                    var updates = {};
+                                    updates["winner"] = (are_we_client ? "client" : "host")
+                                    updates["winning_position"] = cur_state.hit_string;
+                                    updates["broadcast_action"] = "game_over|" + (are_we_client ? "client" : "host");
+                                    aiRef.update(updates);
+                                    return;
+                                }
+
+                                // Wait for their attack.
+                                console.log("AI: Waiting for opponent attack...");
+                            }, 1000);
+    					}
+    				}
+                }
+            });
         };
 
         // Continue after click.
@@ -148,6 +594,16 @@ $(document).ready(function() {
 
                     // Insert the game entry.
                     firebase.database().ref().update(updates);
+
+                    // Save state to store.
+                    var new_state = {
+        				"client": already_hosting,
+        				"mode": entry.mode,
+        				"board_state": entry.board_state
+        			};
+
+        			// Send new state to store.
+        			ai_store.dispatch({type: "AI_UPDATE_GAME_STATE", data: new_state});
 
                     // Grab a game database reference.
                     aiRef = firebase.database().ref("games/" + newPostKey);
@@ -189,6 +645,44 @@ $(document).ready(function() {
                     updates["/update_timestamp"] = Date.now();
                     updates["/board_state"] = [];
                     aiRef.update(updates);
+
+                    // Save state to store.
+                    aiRef.once("value", function(value) {
+                        var new_state = {
+            				"client": already_hosting,
+            				"mode": value.mode,
+            				"board_state": value.board_state
+            			};
+
+            			// Send new state to store.
+            			ai_store.dispatch({type: "AI_UPDATE_GAME_STATE", data: new_state});
+                    });
+
+                    // Handle ACK ping-pong.
+                    var onGameDataChange = function(changed_data){
+                        if(changed_data.getKey() !== "started") return;
+                        var changed_val = changed_data.val();
+                        if(changed_val == 2){
+                            // Detach this callback and defer to main callback.
+                            aiRef.off("child_added", onGameDataChange);
+                            aiRef.off("child_changed", onGameDataChange);
+                            aiRef.on("child_added", masterAiHandler);
+                            aiRef.on("child_changed", masterAiHandler);
+
+                            // Send a reply ACK.
+                            var updates = {};
+                            updates["/started"] = 3;
+                            updates["/user_states/1"] = "DOING_SETUP";
+                            updates["/board_state"] = [
+                                ["ht", ["", ""]], // for hit testing
+                                ["his", [[0]]] // for history
+                            ];
+                            updates["/broadcast_action"] = "setup";
+                            aiRef.update(updates);
+                        }
+                    }
+                    aiRef.on("child_added", onGameDataChange);
+                    aiRef.on("child_changed", onGameDataChange);
                 }
             }, 10);
         });
@@ -396,13 +890,6 @@ $(document).ready(function() {
 		})();
 	}
 	// Define ship setup helper function.
-	var all_ships = [
-		["Carrier", 5],
-		["Battleship", 4],
-		["Cruiser", 3],
-		["Submarine", 3],
-		["Destroyer", 2]
-	];
 	var generateHitString = function(smap){
 		return lzw_encode(JSON.stringify(smap));
 	}
@@ -487,7 +974,7 @@ $(document).ready(function() {
 			gameRef.update(updates);
 
 			// Store hit string in private store.
-			store.dispatch({ type: "SET_HIT_STRING", data: hit_str })
+			store.dispatch({ type: "SET_HIT_STRING", data: hit_str });
 		});
 		$('.finish-setup-button').fadeIn();
 	}
@@ -858,7 +1345,7 @@ $(document).ready(function() {
 
                         // Update ship sidebar.
                         $('.health-red').removeClass("health-red");
-                        var their_fired_json = cur_state.their_fired.map(function(val) {
+                        var their_fired_json = store.getState().their_fired.map(function(val) {
                             return JSON.stringify(val.square);
                         });
                         for(var ship_name in hit_map){
