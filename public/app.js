@@ -1,5 +1,4 @@
 // TODO: More variants, by game ID, sharing / social integration.
-// TODO: Play AI if no opponent found in n minutes
 // TODO: Ensure reusability of interface for another game
 var setup_complete = false, gameRef = undefined;
 
@@ -1957,7 +1956,7 @@ $(document).ready(function() {
 				//console.log(snapshot);
 				//console.log(snapshot.val());
 				console.log(on);
-				if(on.started) return;
+				if(on.started != 0) return;
 				if(on.users[0][0] == user_info.uid) return; // can't join your own game
 
 				// Filter by timestamp.
