@@ -1,5 +1,8 @@
 // TODO: More variants, by game ID, sharing / social integration.
 // TODO: Ensure reusability of interface for another game
+// TODO: Auto-resign if opponent disconnects (need timer).
+// TODO: Name in red strikethrough if ship destroyed
+// TODO: Variant with mines, maybe like minesweeper (maybe if you hit a mine, you lose lives or something?)
 var setup_complete = false, gameRef = undefined;
 
 // jQuery mixin to remove all classes with prefix.
@@ -1447,6 +1450,37 @@ $(document).ready(function() {
                             }, 3000);
                         }, 250);
 					} else if(turn_type === "firing_response"){
+                        // First, count number of ships of theirs that we have destroyed
+                        // prior to this turn.
+                        var orig_destroyed_ships = 0;
+                        var shipForSquare = {}, hitsOnEachShip = {};
+                        var hitsNeededForEachShip = {};
+                        cur_state.our_fired
+                            .filter(function(arr_on){
+                                return arr_on.hasOwnProperty("ship");
+                            })
+                            .map(function(arr_on){
+                                shipForSquare[JSON.stringify(arr_on.square)] = arr_on.ship.toLowerCase();
+                            })
+                        ;
+                        for(var square in shipForSquare){
+                            var ship = shipForSquare[square];
+                            if(ship in hitsOnEachShip){
+                                hitsOnEachShip[ship] += 1;
+                            } else {
+                                hitsOnEachShip[ship] = 1;
+                            }
+                        }
+                        all_ships.map(function(arr){
+                            hitsNeededForEachShip[arr[0].toLowerCase()] = arr[1];
+                        });
+                        for(var ship in hitsOnEachShip){
+                            var hits = hitsOnEachShip[ship];
+                            if(hits >= hitsNeededForEachShip[ship]){
+                                ++orig_destroyed_ships;
+                            }
+                        }
+
 						// Retrieve response for squares fired upon.
 						var fired_response = data.board_state[1][1][turn_key][1];
 						console.log("Firing response", fired_response);
@@ -1460,7 +1494,7 @@ $(document).ready(function() {
                         // First, special styling for squares just hit or missed w/ animation.
                         var total_hits = fired_response.length;
                         var successful_hits = 0;
-                        var uniqueHits = [];
+                        var uniqueHits = [], currentHitsByShip = {};
                         for(var i = 0; i < fired_response.length; i++){
                             var on = fired_response[i];
                             var on_sq = on.square;
@@ -1470,6 +1504,12 @@ $(document).ready(function() {
                                 ++successful_hits;
                                 $('#' + grid_id).addClass("grid-animation-firing-hit");
                                 uniqueHits.push(JSON.stringify(on_sq));
+                                on.ship = on.ship.toLowerCase();
+                                if(on.ship in currentHitsByShip){
+                                    currentHitsByShip[on.ship] += 1;
+                                } else {
+                                    currentHitsByShip[on.ship] = 1;
+                                }
                             } else {
                                 $('#' + grid_id).addClass("grid-animation-firing-miss-bad");
                             }
@@ -1486,6 +1526,12 @@ $(document).ready(function() {
                             if(on.hit){
                                 $('#' + grid_id).addClass("grid-animation-ship-hit");
                                 uniqueHits.push(JSON.stringify(on_sq));
+                                on.ship = on.ship.toLowerCase();
+                                if(on.ship in currentHitsByShip){
+                                    currentHitsByShip[on.ship] += 1;
+                                } else {
+                                    currentHitsByShip[on.ship] = 1;
+                                }
                             } else {
                                 $('#' + grid_id).addClass("grid-animation-ship-miss");
                             }
@@ -1516,6 +1562,16 @@ $(document).ready(function() {
                                 return;
                             }
 
+                            // Count number of ships we have destroyed of theirs now.
+                            var current_destroyed_ships = 0;
+                            for(var ship in currentHitsByShip){
+                                var hits = currentHitsByShip[ship];
+                                if(hits >= hitsNeededForEachShip[ship]){
+                                    ++current_destroyed_ships;
+                                }
+                            }
+                            var ships_newly_sunk = current_destroyed_ships - orig_destroyed_ships;
+
                             // Display result in terms of made / total in text modal.
                             $('#dialogModal').find('.dialog-modal-header').text("Turn Result");
                             var message = "You landed ";
@@ -1523,6 +1579,11 @@ $(document).ready(function() {
                             else if(successful_hits == 1) message += "1 hit";
                             else message += successful_hits.toString() + " hits";
                             message += " out of " + total_hits.toString() + ".";
+                            if(ships_newly_sunk > 0){
+                                var numberLiteral = ["", "one", "two", "three", "four", "five"];
+                                message += " Also, you just destroyed " + numberLiteral[ships_newly_sunk];
+                                message += " of their ships!";
+                            }
                             addStatusEntry(message);
                             $('#dialogModal').find('.dialog-modal-subheader').text(message);
                             $('#dialogModal').fadeIn();
