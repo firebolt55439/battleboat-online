@@ -117,12 +117,15 @@ $(document).ready(function() {
 		["Submarine", 3],
 		["Destroyer", 2]
 	];
-    var startGameAi = function(already_hosting, data){
-        // TODO: Ensure emulator complete, responds to all necessary events, broadcasted
-        // or otherwise, and sends necessary events (e.g. game over, etc.)
+    var startGameAi = function(already_hosting, data, ai_requested){
         // Inform user of choice.
+        ai_requested = (ai_requested === true);
         $('#dialogModal').find('.dialog-modal-header').text("Paired with AI");
-        $('#dialogModal').find('.dialog-modal-subheader').text("Due to not finding an opponent in a reasonable amount of time, you have been paired with a Battleboat Al. Will the robots be our new overlords? Let's find out!");
+        if(!ai_requested){
+            $('#dialogModal').find('.dialog-modal-subheader').text("Due to not finding an opponent in a reasonable amount of time, you have been paired with a Battleboat Al. Will the robots be our new overlords? Let's find out!");
+        } else {
+            $('#dialogModal').find('.dialog-modal-subheader').text("You have opted to do battle with a Battleboat Al. Will the robots be our new overlords? It is time to prove your mettle in the battlefield.");
+        }
         $('#dialogModal').fadeIn();
 
         // Define master AI game handler.
@@ -1823,6 +1826,7 @@ $(document).ready(function() {
 	// Add necessary elements to container.
 	set_up_container.append($('<h3>New Game</h3>'));
 	set_up_container.append($('<h4>Select Mode</h3>'));
+    set_up_container.append($('<input type="checkbox" id="ai-game-checkbox"></input><label for="ai-game-checkbox">Play against AI</label><br />'));
 	set_up_container.append($('<div class="btn-group"> \
 		<button type="button" class="btn btn-primary new-game-btn waves-effect" data-mode="regular">Classic</button> \
 		<button type="button" class="btn btn-danger new-game-btn waves-effect" data-mode="salvo" data-toggle="tooltip" data-placement="top" title="Multiple shots per turn depending on ship count">Salvo</button> \
@@ -1837,7 +1841,7 @@ $(document).ready(function() {
 	set_up_container.appendTo($('#newGameModal'));
 
 	// Install click handlers for new game buttons.
-    var ai_threshold_minutes = 0.95; // threshold in minutes to play against an Al
+    var ai_threshold_minutes = 0.75; // threshold in minutes to play against an Al
 	$('.new-game-btn').click(function() {
 		var mode = $(this).data("mode");
 
@@ -1952,6 +1956,7 @@ $(document).ready(function() {
 		gameRef.on("child_added", onGameDataChange);
 		gameRef.on("child_changed", onGameDataChange);
 		var interval_timer = undefined, search_start_time = Date.now();
+        var ai_requested = $('#ai-game-checkbox').is(":checked");
 		var updateTimestamp = function() {
 			if(hasStarted > 0){
 				clearInterval(interval_timer);
@@ -1961,13 +1966,13 @@ $(document).ready(function() {
 			updates['update_timestamp'] = Date.now();
 			gameRef.update(updates);
 
-            // Fallback to an Al if time exceeds threshold.
+            // Fallback to an Al if time exceeds threshold or if specifically requested.
             var elapsed_search_time = (Date.now() - search_start_time) / (60.0 * 1000.0); // in minutes
-            if(elapsed_search_time >= ai_threshold_minutes){
+            if(elapsed_search_time >= ai_threshold_minutes || ai_requested){
                 setTimeout(function() {
                     startGameAi(/*hosting=*/true, {
                         "id": newPostKey
-                    });
+                    }, ai_requested);
                 }, 10);
                 clearInterval(interval_timer);
                 return;
